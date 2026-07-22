@@ -138,8 +138,15 @@ git commit -m "完善 Git 学习笔记"
 第一次推送 `study` 分支：
 
 ```powershell
-git push -u origin study
+git push -u myorigin study
 ```
+git push：固定动作，意为“我要把本地代码推送到远程仓库”。
+
+-u：是 --set-upstream 的缩写，意为“建立上下游的追踪关联”（这是重点）。
+
+myorigin：远程仓库的别名（你在上一步添加的那个自己账号下的仓库）。
+
+study：你本地的分支名字。
 
 `-u` 会建立本地 `study` 与远程 `origin/study` 的跟踪关系。以后在 `study` 分支上可以简写为：
 
@@ -153,8 +160,16 @@ git push
 git fetch upstream
 git switch master
 git merge --ff-only upstream/master
+# 更新自己 GitHub Fork 中的 master
+git push myorigin master
+
+# 将官方更新合入自己的学习分支
 git switch study
 git merge master
+
+# 推送自己的 study
+git push myorigin study
+
 ```
 
 ## 3. 分支操作
