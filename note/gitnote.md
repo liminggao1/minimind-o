@@ -157,17 +157,30 @@ git push
 配置 Fork 后，从官方仓库更新代码应使用 `upstream`：
 
 ```powershell
+# 从官方仓库（upstream）下载所有最新的提交记录到本地，
+# 但此时只是暂存在本地缓存中，还没有合并到你任何工作分支里。
 git fetch upstream
+
+# 切换到本地的默认主分支 master。
 git switch master
+
+# 将刚才下载的官方 upstream/master 代码，以“快进”方式合并到本地的 master。
+# --ff-only 确保若本地 master 有分叉改动则直接报错，强制保持本地主分支绝对纯净，
+# 使其与官方 master 处于完全一致的线性状态。
 git merge --ff-only upstream/master
-# 更新自己 GitHub Fork 中的 master
+
+# 将本地已同步好的 master 分支，推送到你自己账号下的 GitHub 远程仓库（myorigin）。
+# 这一步是为了让你 GitHub 上的 master 分支也和官方保持同步，方便后续发 PR。
 git push myorigin master
 
-# 将官方更新合入自己的学习分支
+# 切换到你用来写代码/学习的开发分支 study。
 git switch study
+
+# 将刚刚同步好的本地 master（包含官方最新代码）合并进 study。
 git merge master
 
-# 推送自己的 study
+# 将合并了官方更新、且包含你个人代码修改的 study 分支，
+# 推送到你自己 GitHub 仓库（myorigin）的远程 study 分支。
 git push myorigin study
 
 ```
