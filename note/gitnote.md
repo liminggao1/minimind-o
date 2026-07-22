@@ -123,7 +123,7 @@ git commit -m "完善 Git 学习笔记"
 第一次推送 `study` 分支：
 
 ```powershell
-git push -u myorigin study
+git push -u origin study
 ```
 git push：固定动作，意为“我要把本地代码推送到远程仓库”。
 
