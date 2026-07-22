@@ -15,12 +15,12 @@ origin  https://github.com/jingyaogong/minimind-o (fetch)
 origin  https://github.com/jingyaogong/minimind-o (push)
 
 ## `jingyaogong/minimind-o` 是别人的官方仓库。通常可以正常拉取，但直接执行下面的命令可能因为没有写入权限而失败：
-git push origin study
+git push origin main
 ```
 
 ### 将自己的分支保存到 GitHub
 
-需要把 `study` 推送到自己的 GitHub 时，先在 GitHub 页面 Fork 官方项目。Fork 会在自己的账号下创建一份远程仓库副本。
+需要把 `main` 推送到自己的 GitHub 时，先在 GitHub 页面 Fork 官方项目。Fork 会在自己的账号下创建一份远程仓库副本。
 然后将远程仓库整理为：
 ```text
 upstream  官方仓库，用于获取官方更新
@@ -42,8 +42,8 @@ git remote -v
 ```
 输出类似：
 ```
-myorigin    https://github.com/你的用户名/minimind-o.git (fetch)
-myorigin    https://github.com/你的用户名/minimind-o.git (push)
+origin    https://github.com/你的用户名/minimind-o.git (fetch)
+origin    https://github.com/你的用户名/minimind-o.git (push)
 upstream  https://github.com/jingyaogong/minimind-o (fetch)
 upstream  https://github.com/jingyaogong/minimind-o (push)
 ```
@@ -51,25 +51,25 @@ upstream  https://github.com/jingyaogong/minimind-o (push)
 ```
 # 从官方主分支创建自己的学习分支
 ##`-c` 是 `--create` 的缩写，表示创建新分支并立即切换过去。
-git switch -c study
+git switch -c main
 git add note/gitnote.md
 git commit -m "完善 Git 学习笔记"
 ```
 
-第一次推送 `study` 分支：
+第一次推送 `main` 分支：
 
 ```powershell
-git push -u origin study
+git push -u origin main
 ```
 git push：固定动作，意为“我要把本地代码推送到远程仓库”。
 
 -u：是 --set-upstream 的缩写，意为“建立上下游的追踪关联”（这是重点）。
 
-myorigin：远程仓库的别名（你在上一步添加的那个自己账号下的仓库）。
+origin：远程仓库的别名（你在上一步添加的那个自己账号下的仓库）。
 
-study：你本地的分支名字。
+main：你本地的分支名字。
 
-`-u` 会建立本地 `study` 与远程 `origin/study` 的跟踪关系。以后在 `study` 分支上可以简写为：
+`-u` 会建立本地 `main` 与远程 `origin/main` 的跟踪关系。以后在 `main` 分支上可以简写为：
 
 ```powershell
 git push
@@ -90,19 +90,19 @@ git switch master
 # 使其与官方 master 处于完全一致的线性状态。
 git merge --ff-only upstream/master
 
-# 将本地已同步好的 master 分支，推送到你自己账号下的 GitHub 远程仓库（myorigin）。
+# 将本地已同步好的 master 分支，推送到你自己账号下的 GitHub 远程仓库（origin）。
 # 这一步是为了让你 GitHub 上的 master 分支也和官方保持同步，方便后续发 PR。
 git push origin master
 
-# 切换到你用来写代码/学习的开发分支 study。
-git switch study
+# 切换到你用来写代码/学习的开发分支 main。
+git switch main
 
-# 将刚刚同步好的本地 master（包含官方最新代码）合并进 study。
+# 将刚刚同步好的本地 master（包含官方最新代码）合并进 main。
 git merge master
 
-# 将合并了官方更新、且包含你个人代码修改的 study 分支，
-# 推送到你自己 GitHub 仓库（myorigin）的远程 study 分支。
-git push origin study
+# 将合并了官方更新、且包含你个人代码修改的 main 分支，
+# 推送到你自己 GitHub 仓库（origin）的远程 main 分支。
+git push origin main
 
 ```
 
@@ -110,7 +110,7 @@ git push origin study
 
 ```powershell
 # 进入自己的学习分支
-git switch study
+git switch main
 
 # 修改代码后检查并提交
 git status
@@ -120,13 +120,13 @@ git commit -m "描述本次修改"
 
 # 获取并检查官方更新
 git fetch upstream
-git log --oneline study..origin/master
-git diff study...origin/master
+git log --oneline main..upstream/master
+git diff main...upstream/master
 
 # 更新干净的 master
 git switch master
 git pull --ff-only upstream master
 # 将官方更新合入自己的分支
-git switch study
+git switch main
 git merge master
 ```
