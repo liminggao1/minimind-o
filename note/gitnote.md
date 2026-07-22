@@ -77,21 +77,6 @@ https://github.com/jingyaogong/minimind-o  远程仓库地址
 git push origin study
 ```
 
-只在本地学习时，不需要修改远程配置。使用下面的命令就可以获取官方更新：
-
-```powershell
-git fetch origin
-```
-
-本项目的官方默认分支是 `master`，因此实际更新流程是：
-
-```powershell
-git switch master
-git pull --ff-only origin master
-git switch study
-git merge master
-```
-
 ### 将自己的分支保存到 GitHub
 
 需要把 `study` 推送到自己的 GitHub 时，先在 GitHub 页面 Fork 官方项目。Fork 会在自己的账号下创建一份远程仓库副本。
