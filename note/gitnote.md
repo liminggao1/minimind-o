@@ -21,10 +21,14 @@ git push origin main
 ### 将自己的分支保存到 GitHub
 
 需要把 `main` 推送到自己的 GitHub 时，先在 GitHub 页面 Fork 官方项目。Fork 会在自己的账号下创建一份远程仓库副本。
-然后将远程仓库整理为：
+然后将仓库整理为：
 ```text
+## 远程仓库
 upstream  官方仓库，用于获取官方更新
 origin    自己的 Fork，用于保存和推送个人代码
+## 本地仓库 
+master -> upstream/master
+main   -> origin/main
 ```
 先把现在的 `origin` 改名为 `upstream`：
 ```powershell
