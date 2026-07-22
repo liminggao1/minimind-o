@@ -10,7 +10,7 @@ git status
 ### 查看远程仓库地址
 git remote -v
 
-### 通常 `origin` 表示克隆项目时使用的远程仓库。
+### 通常 `origin` 表示克隆项目时使用的远程仓库（可以是官方也可以是fork的仓库）。
 origin  https://github.com/jingyaogong/minimind-o (fetch)
 origin  https://github.com/jingyaogong/minimind-o (push)
 
@@ -37,7 +37,7 @@ upstream  https://github.com/jingyaogong/minimind-o (push)
 ```
 再添加自己的 Fork。下面地址中的 `你的GitHub用户名` 必须替换为真实用户名，不能原样输入：
 ```powershell
-git remote add myorigin https://github.com/liminggao1/minimind-o.git
+git remote add origin https://github.com/liminggao1/minimind-o.git
 git remote -v
 ```
 输出类似：
@@ -92,7 +92,7 @@ git merge --ff-only upstream/master
 
 # 将本地已同步好的 master 分支，推送到你自己账号下的 GitHub 远程仓库（myorigin）。
 # 这一步是为了让你 GitHub 上的 master 分支也和官方保持同步，方便后续发 PR。
-git push myorigin master
+git push origin master
 
 # 切换到你用来写代码/学习的开发分支 study。
 git switch study
@@ -102,7 +102,7 @@ git merge master
 
 # 将合并了官方更新、且包含你个人代码修改的 study 分支，
 # 推送到你自己 GitHub 仓库（myorigin）的远程 study 分支。
-git push myorigin study
+git push origin study
 
 ```
 
@@ -119,14 +119,13 @@ git add .
 git commit -m "描述本次修改"
 
 # 获取并检查官方更新
-git fetch origin
+git fetch upstream
 git log --oneline study..origin/master
 git diff study...origin/master
 
 # 更新干净的 master
 git switch master
-git pull --ff-only origin master
-
+git pull --ff-only upstream master
 # 将官方更新合入自己的分支
 git switch study
 git merge master
