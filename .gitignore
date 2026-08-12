@@ -32,3 +32,4 @@ Thumbs.db
 /wandb/
 /swanlog/
 *.log
+ffmpeg_probe.mp3

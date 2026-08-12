@@ -23,3 +23,21 @@ The repository currently has no automated test suite or coverage gate. For each 
 ## Commit & Pull Request Guidelines
 
 Recent history uses short Chinese-language commit subjects, often for note or branch updates. Keep each commit focused and use a specific imperative subject, for example `Fix audio projection training`. Pull requests should explain the purpose and behavioral impact, list verification commands, link related issues, and include screenshots for WebUI changes or concise logs/metrics for training changes. Never include downloaded weights, credentials, or private dataset paths.
+
+## Agent skills
+
+### Issue tracker
+
+项目任务使用本地 Markdown，保存于 `.scratch/`。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认的五类任务状态标签。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+项目采用单项目文档布局，使用根目录 `CONTEXT.md` 和 `docs/adr/`。详见 `docs/agents/domain.md`。
+
+### Teaching workspace
+
+`teach` 的学习状态统一保存在 `learning/`，包括 `MISSION.md`、课程、参考资料和学习记录。

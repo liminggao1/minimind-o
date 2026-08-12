@@ -77,10 +77,10 @@ MiniMind-O 尝试补上已知的空位：让语音和文本在 hidden state 层�
 
 #### 🎉 已发布模型列表
 
-| 模型 | 参数（主干） | Release |
-|---|---|---|
-| minimind-3o | ~0.1B | 2026.05.05 |
-| minimind-3o-moe | ~0.3B-A0.1B | 2026.05.05 |
+| 模型            | 参数（主干） | Release    |
+| --------------- | ------------ | ---------- |
+| minimind-3o     | ~0.1B        | 2026.05.05 |
+| minimind-3o-moe | ~0.3B-A0.1B  | 2026.05.05 |
 
 ---
 
@@ -169,6 +169,11 @@ modelscope download --model gongjy/minimind-3o-pytorch --local_dir ./out
 ### 2' 命令行问答
 
 ```bash
+# 环境安装
+conda install --override-channels `
+  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge `
+  ffmpeg
+
 python eval_omni.py --load_from model --weight sft_omni
 ```
 
@@ -273,22 +278,22 @@ MiniMind-O 所说的 0.1B，指 Thinker、Talker 和两路 projector 组成的�
 
 下表按发布模型统计主要模块参数，Trainable 参数按 PyTorch 模块统计，tied embedding 去重计入。
 
-| 统计口径 | minimind-3o | minimind-3o-moe |
-|---|---:|---:|
-| 可训练主体 | 113.13M | 314.89M |
-| 冻结外部模块 | 424.70M | 424.70M |
-| 运行时总加载 | 537.83M | 739.59M |
+| 统计口径     | minimind-3o | minimind-3o-moe |
+| ------------ | ----------: | --------------: |
+| 可训练主体   |     113.13M |         314.89M |
+| 冻结外部模块 |     424.70M |         424.70M |
+| 运行时总加载 |     537.83M |         739.59M |
 
-| 模块 | 具体实现 | 关键配置 | 状态 / 参数 (~3o / ~3o-moe) |
-|---|---|---|---|
-| Thinker | MiniMind Transformer | 8 layers, hidden 768 | trainable, 63.91M / 198.42M |
-| Talker | 独立 MiniMind blocks | 4 layers, 8 codebook heads | trainable, 47.05M / 114.30M |
-| Audio projector | `MMAudioProjector` | 512 → 768 | trainable, 0.99M |
-| Vision projector | `MMVisionProjector` | 768 → 768 | trainable, 1.18M |
-| Audio encoder | SenseVoice-Small | 16 kHz speech features | frozen, 234.00M |
-| Vision encoder | SigLIP2 base-p32-256 | 256×256 image, 64 tokens | frozen, 94.55M |
-| Speech codec | Mimi | 8 codebooks, 12.5 Hz, 24 kHz | frozen, 96.15M |
-| Speaker condition | CAM++ embedding | 192-d speaker vector | precomputed |
+| 模块              | 具体实现             | 关键配置                     | 状态 / 参数 (~3o / ~3o-moe) |
+| ----------------- | -------------------- | ---------------------------- | --------------------------- |
+| Thinker           | MiniMind Transformer | 8 layers, hidden 768         | trainable, 63.91M / 198.42M |
+| Talker            | 独立 MiniMind blocks | 4 layers, 8 codebook heads   | trainable, 47.05M / 114.30M |
+| Audio projector   | `MMAudioProjector`   | 512 → 768                    | trainable, 0.99M            |
+| Vision projector  | `MMVisionProjector`  | 768 → 768                    | trainable, 1.18M            |
+| Audio encoder     | SenseVoice-Small     | 16 kHz speech features       | frozen, 234.00M             |
+| Vision encoder    | SigLIP2 base-p32-256 | 256×256 image, 64 tokens     | frozen, 94.55M              |
+| Speech codec      | Mimi                 | 8 codebooks, 12.5 Hz, 24 kHz | frozen, 96.15M              |
+| Speaker condition | CAM++ embedding      | 192-d speaker vector         | precomputed                 |
 
 # 📌 实验
 
@@ -304,13 +309,13 @@ full 数据集与发布的 `minimind-3o` / `minimind-3o-moe` 权重对应，覆�
 
 其中 T2A 表示 Text-to-Audio，A2A 表示 Audio-to-Audio，I2T 表示 Image-to-Text。
 
-| 数据集 | 子集 | 输入语音 | 输出语音 | 备注 |
-|---|---|---|---|---|
-| `sft_t2a_mini` | 英文 T2A | — | 约 470.14 h | mini 入门用 |
-| `sft_a2a_mini` | 英文 A2A | 约 74.64 h | 约 56.60 h | mini 入门用 |
-| `sft_t2a` | 中英 T2A | — | 约 1636.01 h | full 训练 |
-| `sft_a2a` | 中英 A2A | 约 1711.97 h | 约 423.40 h | full 训练 |
-| `sft_i2t` | 图像 I2T | — | — | full 训练 |
+| 数据集         | 子集     | 输入语音     | 输出语音     | 备注        |
+| -------------- | -------- | ------------ | ------------ | ----------- |
+| `sft_t2a_mini` | 英文 T2A | —            | 约 470.14 h  | mini 入门用 |
+| `sft_a2a_mini` | 英文 A2A | 约 74.64 h   | 约 56.60 h   | mini 入门用 |
+| `sft_t2a`      | 中英 T2A | —            | 约 1636.01 h | full 训练   |
+| `sft_a2a`      | 中英 A2A | 约 1711.97 h | 约 423.40 h  | full 训练   |
+| `sft_i2t`      | 图像 I2T | —            | —            | full 训练   |
 
 `sft_t2a` 中中文、英文、混合样本占比分别为 45.7%、46.5%、7.8%；`sft_a2a` 中三者分别为 70.8%、21.2%、8.0%。这个分布会直接反映到行为上：短中文和短英文回答通常较稳定，较长英文语音更容易出现读音漂移和漏词。mini 子集只保留英文，因此即便参数量和数据量都收得很紧，单语种内部的 CER 表现仍能维持在可用范围。
 
@@ -340,10 +345,10 @@ T2A 曲线已去掉早期不兼容权重 resume 造成的异常尖峰；MoE 总�
 
 ## Ⅲ 模型权重
 
-| 模型格式 | ModelScope | HuggingFace |
-|---|---|---|
-| PyTorch (`*.pth`) | [minimind-3o-pytorch](https://www.modelscope.cn/models/gongjy/minimind-3o-pytorch) | [minimind-3o-pytorch](https://huggingface.co/jingyaogong/minimind-3o-pytorch) |
-| Transformers | [minimind-o collection](https://modelscope.cn/collections/gongjy/MiniMind-O) | [minimind-o collection](https://huggingface.co/collections/jingyaogong/minimind-o) |
+| 模型格式          | ModelScope                                                                         | HuggingFace                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| PyTorch (`*.pth`) | [minimind-3o-pytorch](https://www.modelscope.cn/models/gongjy/minimind-3o-pytorch) | [minimind-3o-pytorch](https://huggingface.co/jingyaogong/minimind-3o-pytorch)      |
+| Transformers      | [minimind-o collection](https://modelscope.cn/collections/gongjy/MiniMind-O)       | [minimind-o collection](https://huggingface.co/collections/jingyaogong/minimind-o) |
 
 > Transformers 版本包含 `minimind-3o` 与 `minimind-3o-moe`，适合直接用于 `eval_omni.py` 和 WebUI 推理；原生 PyTorch 权重主要用于训练、复现实验和继续微调。
 
@@ -359,14 +364,14 @@ Omni 模型目前可能还没有统一的评估口径，不同工作的 LLM 主�
 
 384 维最诱人，dense 版本可以压到 88M 左右；512 维也更轻。但表中结果说明，小并不自动等于划算：短句还能维持，中长句更容易出现漏词、重复和发音漂移。768 维最后留下来，是因为它和 MiniMind 主干维度一致，可以用 Thinker 后 4 层初始化；参数仍在 0.1B 左右，训练成本没有明显增加，一致性却稳定得多。
 
-| Variant | Talker hidden | Params | Avg CER ↓ | Short ↓ | Mid / Long ↓ |
-|---|---|---|---|---|---|
-| Dense | 768 | 115.29M | **0.0897** | 0.1528 | 0.0874 / 0.0675 |
-| Dense | 512 | 96.13M | 0.1745 | 0.2709 | 0.2455 / 0.0976 |
-| Dense | 384 | 88.72M | 0.2767 | 0.3904 | 0.1865 / 0.4046 |
-| MoE | 768 | 317.05M-A115.33M | **0.0900** | 0.2075 | 0.0533 / 0.0271 |
-| MoE | 512 | 261.32M-A96.17M | 0.1265 | 0.0711 | 0.1490 / 0.1464 |
-| MoE | 384 | 240.04M-A88.75M | 0.3280 | 0.3757 | 0.2777 / 0.4313 |
+| Variant | Talker hidden | Params           | Avg CER ↓  | Short ↓ | Mid / Long ↓    |
+| ------- | ------------- | ---------------- | ---------- | ------- | --------------- |
+| Dense   | 768           | 115.29M          | **0.0897** | 0.1528  | 0.0874 / 0.0675 |
+| Dense   | 512           | 96.13M           | 0.1745     | 0.2709  | 0.2455 / 0.0976 |
+| Dense   | 384           | 88.72M           | 0.2767     | 0.3904  | 0.1865 / 0.4046 |
+| MoE     | 768           | 317.05M-A115.33M | **0.0900** | 0.2075  | 0.0533 / 0.0271 |
+| MoE     | 512           | 261.32M-A96.17M  | 0.1265     | 0.0711  | 0.1490 / 0.1464 |
+| MoE     | 384           | 240.04M-A88.75M  | 0.3280     | 0.3757  | 0.2777 / 0.4313 |
 
 Dense 和 MoE 的 CER 不宜直接横向比较：同一问题下，两个 Thinker 生成的内容和长度可能不同，Talker 面对的合成难度也不同。更有意义的是看同一架构内部的趋势，768 都明显优于 512 和 384。
 
@@ -379,20 +384,20 @@ Dense 和 MoE 的 CER 不宜直接横向比较：同一问题下，两个 Thinke
 
 逐音色细分如下：
 
-| Split | Speaker | Dense ↑ | MoE ↑ |
-|---|---|---|---|
-| Seen | dylan | 0.6997 | 0.6837 |
-| Seen | eric | 0.5289 | 0.4232 |
-| Seen | serena | 0.7092 | 0.7041 |
-| Seen | uncle_fu | 0.7241 | 0.7337 |
-| Seen | vivian | 0.5744 | 0.5888 |
-| Unseen | arthur | 0.7171 | 0.6750 |
-| Unseen | chelsie | 0.6437 | 0.6240 |
-| Unseen | cherry | 0.5689 | 0.5678 |
-| Unseen | ethan | 0.4783 | 0.4847 |
-| Unseen | jennifer | 0.4749 | 0.4003 |
-| Unseen | momo | 0.6470 | 0.5720 |
-| Unseen | moon | 0.4282 | 0.6673 |
+| Split  | Speaker  | Dense ↑ | MoE ↑  |
+| ------ | -------- | ------- | ------ |
+| Seen   | dylan    | 0.6997  | 0.6837 |
+| Seen   | eric     | 0.5289  | 0.4232 |
+| Seen   | serena   | 0.7092  | 0.7041 |
+| Seen   | uncle_fu | 0.7241  | 0.7337 |
+| Seen   | vivian   | 0.5744  | 0.5888 |
+| Unseen | arthur   | 0.7171  | 0.6750 |
+| Unseen | chelsie  | 0.6437  | 0.6240 |
+| Unseen | cherry   | 0.5689  | 0.5678 |
+| Unseen | ethan    | 0.4783  | 0.4847 |
+| Unseen | jennifer | 0.4749  | 0.4003 |
+| Unseen | momo     | 0.6470  | 0.5720 |
+| Unseen | moon     | 0.4282  | 0.6673 |
 
 总体上，minimind-3o 与 minimind-3o-moe 的平均结果接近，也都略高于早期 baseline；这说明音色保持不主要由 inactive expert 容量决定，更直接的影响来自 reference 片段质量、CAM++ embedding 的可分性，以及 Talker 生成音频本身是否稳定。单个音色里，uncle_fu、serena、arthur 这类声音更容易保持住，至少一个版本能超过 0.70；eric、moon 等 outlier 则更容易受生成质量影响。换句话说，这个能力已经能区分一部分音色特征，但距离“给一段参考音频就稳定复刻”的产品级体验还有距离。
 
@@ -532,11 +537,11 @@ https://github.com/user-attachments/assets/3f533e26-1ad8-4ab3-baf1-21267734d3ee
 
 这里选了 20 个英文问题，并统一加上 `Answer briefly in one short sentence` 约束。这样做不是为了考察开放式英文能力，而是尽量把回答长度压到同一范围内；三套模型生成音频后，再统一用 Qwen3-ASR 转写，并与目标文本计算 CER / WER，用来比较 Talker 的文本一致性。
 
-| 长度桶 | [Mini-Omni](https://huggingface.co/gpt-omni/mini-omni) CER/WER | [Mini-Omni2](https://huggingface.co/gpt-omni/mini-omni2) CER/WER | minimind-3o CER/WER |
-|---|---|---|---|
-| short (≤15w) | 0.0195 / 0.0384 (n=8) | 0.0503 / 0.0584 (n=14) | 0.0531 / 0.0417 (n=8) |
-| mid (16–30w) | 0.0038 / 0.0052 (n=12) | 0.0062 / 0.0076 (n=6) | 0.1327 / 0.1420 (n=11) |
-| long (31–60w) | — | — | 0.0431 / 0.0508 (n=1) |
+| 长度桶        | [Mini-Omni](https://huggingface.co/gpt-omni/mini-omni) CER/WER | [Mini-Omni2](https://huggingface.co/gpt-omni/mini-omni2) CER/WER | minimind-3o CER/WER    |
+| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------- |
+| short (≤15w)  | 0.0195 / 0.0384 (n=8)                                          | 0.0503 / 0.0584 (n=14)                                           | 0.0531 / 0.0417 (n=8)  |
+| mid (16–30w)  | 0.0038 / 0.0052 (n=12)                                         | 0.0062 / 0.0076 (n=6)                                            | 0.1327 / 0.1420 (n=11) |
+| long (31–60w) | —                                                              | —                                                                | 0.0431 / 0.0508 (n=1)  |
 
 ≤15 词的短回复里，minimind-3o 已经接近 Mini-Omni2；真正拉开差距的是 16–30 词段。这个长度已经不是简单短语，Talker 需要在一个完整短句里同时维持发音、节奏和词面一致性，也是当前 0.1B Talker 最容易暴露不稳定性的区间。
 
@@ -544,10 +549,10 @@ https://github.com/user-attachments/assets/3f533e26-1ad8-4ab3-baf1-21267734d3ee
 
 [Mini-Omni](https://huggingface.co/gpt-omni/mini-omni) 不支持 VL 路径，因此这里只比较 [Mini-Omni2](https://huggingface.co/gpt-omni/mini-omni2)（0.5B）和 minimind-3o（0.1B）。9 张合成图像上，两个模型分别生成英文回答，再统一转写并计算 CER / WER，作为视觉到语音链路的一致性参考。
 
-| Model | Params | Avg CER ↓ | Avg WER ↓ |
-|---|---|---|---|
-| [Mini-Omni2](https://huggingface.co/gpt-omni/mini-omni2) | 0.5B | 0.7609 | 0.9756 |
-| minimind-3o | 0.1B | 0.8241 | 1.0293 |
+| Model                                                    | Params | Avg CER ↓ | Avg WER ↓ |
+| -------------------------------------------------------- | ------ | --------- | --------- |
+| [Mini-Omni2](https://huggingface.co/gpt-omni/mini-omni2) | 0.5B   | 0.7609    | 0.9756    |
+| minimind-3o                                              | 0.1B   | 0.8241    | 1.0293    |
 
 这个数值不能当作开放式图像描述的绝对正确率。视觉描述存在大量等价表达，同义改写和描述顺序都会影响 CER / WER，数值整体偏高是预期现象。在同一自动流程下，minimind-3o 落后于 Mini-Omni2，但仍处在同一数量级，同时参数约为后者的 1/5。
 

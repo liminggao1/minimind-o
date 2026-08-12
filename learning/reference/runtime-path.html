@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MiniMind-O 推理调用链速查</title>
+    <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+    <header class="page-header">
+        <div class="page-header-inner">
+            <p class="eyebrow">Reference</p>
+            <h1>MiniMind-O 文本推理调用链</h1>
+            <p class="lede">只保留定位源码所需的函数和职责，供后续课程快速回看。</p>
+        </div>
+    </header>
+    <main>
+        <section>
+            <h2>入口链路</h2>
+            <pre><code>eval_omni.py
+└─ main()
+   ├─ argparse 解析参数
+   ├─ init_model(args)
+   └─ mode == 0
+      └─ eval_sample(...)
+         ├─ tokenizer.apply_chat_template(...)
+         ├─ tokenizer(...)
+         └─ MiniMindOmni.generate(stream=True)
+            └─ MiniMindOmni.stream_generate(...)
+               └─ MiniMindOmni.forward(...)</code></pre>
+        </section>
+        <section>
+            <h2>核心对象</h2>
+            <dl>
+                <dt><code>OmniConfig</code></dt>
+                <dd>保存 Thinker、Talker、Projector 和多模态 token 等配置。</dd>
+                <dt><code>MiniMindOmni</code></dt>
+                <dd>整合文本主干、音频生成分支以及音频和视觉输入模块。</dd>
+                <dt><code>Thinker</code></dt>
+                <dd>当前实现中是继承自 MiniMind 的语言模型主干别名。</dd>
+                <dt><code>Talker</code></dt>
+                <dd>根据 Thinker 语义状态逐层生成 Mimi 音频 codes。</dd>
+            </dl>
+        </section>
+        <section>
+            <h2>输入张量起点</h2>
+            <pre><code>messages: list[dict]
+    ↓ apply_chat_template
+inputs_text: str
+    ↓ tokenizer
+input_ids: list[int]
+    ↓ torch.tensor(...)[None, ...]
+x: LongTensor[1, sequence_length]</code></pre>
+        </section>
+    </main>
+    <footer class="page-footer">返回课程：<a href="../lessons/0001-trace-text-inference.html">第一课</a></footer>
+</body>
+</html>

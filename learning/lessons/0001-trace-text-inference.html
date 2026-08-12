@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>第一课：追踪一次文本推理</title>
+    <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+    <header class="page-header">
+        <div class="page-header-inner">
+            <p class="eyebrow">Lesson 0001 · Runtime Path</p>
+            <h1>追踪一次文本推理：从命令行到生成循环</h1>
+            <p class="lede">本课不拆 Transformer 数学结构，只建立你阅读整个项目所需的第一条主干调用链。</p>
+        </div>
+    </header>
+
+    <main>
+        <section class="outcome">
+            <h2>完成标准</h2>
+            <p>不看本页时，你能从 <code>main()</code> 出发，在源码中依次找到模型初始化、文本预处理和自回归生成入口。</p>
+        </section>
+
+        <section>
+            <h2>先运行最小文本模式</h2>
+            <p>在项目根目录执行。限制生成长度并关闭音频解码，减少第一次观察的干扰；看到第一条完整输出后可以停止程序。</p>
+            <pre><code>conda activate myminimind01
+python eval_omni.py --load_from model --weight sft_omni --mode 0 --prompt_lang 0 --max_new_tokens 32 --decode_audio 0</code></pre>
+            <p class="source-note">本课主材料是项目源码 <a href="../../eval_omni.py"><code>eval_omni.py</code></a>。模型整体设计可对照作者的 <a href="https://arxiv.org/abs/2605.03937">MiniMind-O Technical Report</a>。</p>
+        </section>
+
+        <section>
+            <h2>先记住五站，不记细节</h2>
+            <div class="flow" aria-label="文本推理五站调用链">
+                <div class="flow-step"><strong>1. main</strong>解析参数并选择文本模式</div>
+                <div class="flow-step"><strong>2. init_model</strong>创建结构并加载权重</div>
+                <div class="flow-step"><strong>3. eval_sample</strong>把对话变成 token</div>
+                <div class="flow-step"><strong>4. generate</strong>选择流式生成路径</div>
+                <div class="flow-step"><strong>5. stream_generate</strong>逐 token 调用 forward</div>
+            </div>
+            <p>今天的目标只是能在代码中找到这五站，并解释每一站为什么存在。</p>
+        </section>
+
+        <section>
+            <h2>第一站：<code>main()</code> 负责组织流程</h2>
+            <p><span class="file-path">eval_omni.py:90</span> 开始定义命令行参数。默认 <code>mode="0"</code>，因此程序进入文本输入分支。</p>
+            <pre><code>args = parser.parse_args()
+modes = set(args.mode.replace(',', '').replace('-1', '012345'))
+
+model, tokenizer = init_model(args)
+
+if '0' in modes:
+    ...
+    eval_sample(model, tokenizer, args, idx, prompt, None, output_name)</code></pre>
+            <p>这里没有模型计算。它只负责准备参数、初始化对象并把样本交给下一级。</p>
+        </section>
+
+        <section>
+            <h2>第二站：<code>init_model()</code> 把结构和权重合在一起</h2>
+            <p><span class="file-path">eval_omni.py:17</span> 中，原生 PyTorch 路径依次完成：</p>
+            <ol>
+                <li>从 <code>model/</code> 加载 tokenizer。</li>
+                <li>根据参数构造 <code>OmniConfig</code>。</li>
+                <li>用配置实例化 <code>MiniMindOmni</code>，此时只有模型结构。</li>
+                <li>从 <code>out/sft_omni_768.pth</code> 读取状态字典并写入结构。</li>
+                <li>加载 Mimi codec，切换半精度、评估模式和 CUDA 设备。</li>
+            </ol>
+            <pre><code>ckp = f'./{args.save_dir}/{args.weight}_{args.hidden_size}{moe_suffix}.pth'
+model = MiniMindOmni(OmniConfig(...), ...)
+model.load_state_dict(torch.load(ckp, map_location=args.device), strict=False)
+...
+return model.half().eval().to(args.device), tokenizer</code></pre>
+            <p><code>torch.load</code> 读取磁盘对象，<code>load_state_dict</code> 才把参数复制进已经创建的模型结构。参见 PyTorch 官方的 <a href="https://docs.pytorch.org/docs/stable/generated/torch.load.html"><code>torch.load</code></a> 与 <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict"><code>load_state_dict</code></a> 文档。</p>
+        </section>
+
+        <section>
+            <h2>第三站：<code>eval_sample()</code> 把对话变成张量</h2>
+            <p><span class="file-path">eval_omni.py:43</span> 中的数据形态依次变化：</p>
+            <pre><code>messages: list[dict]
+    ↓ tokenizer.apply_chat_template(...)
+inputs_text: str
+    ↓ tokenizer(inputs_text)
+input_ids: list[int]
+    ↓ torch.tensor(...)[None, ...]
+x: LongTensor[1, sequence_length]</code></pre>
+            <p><code>apply_chat_template</code> 不是分词。它先按照模型训练时的对话格式，把角色和内容拼成字符串；随后 tokenizer 才把字符串转成 token id。可对照 Hugging Face 官方的 <a href="https://huggingface.co/docs/transformers/main/chat_templating">Chat templates</a>。</p>
+        </section>
+
+        <section>
+            <h2>第四、五站：进入 Omni 生成循环</h2>
+            <p><code>eval_sample()</code> 调用的是 <code>MiniMindOmni.generate()</code>。因为传入 <code>stream=True</code>，它立即返回 <code>stream_generate()</code> 生成器。</p>
+            <pre><code>eval_sample()
+└─ model.generate(..., stream=True, return_audio_codes=True)
+   └─ MiniMindOmni.generate()
+      └─ MiniMindOmni.stream_generate()
+         └─ self.forward(...)
+            ├─ text logits
+            └─ audio logits</code></pre>
+            <p>生成循环每一步读取最后位置的 logits，采样一个文本 token，并维护音频 codes。具体采样和 Talker 细节留到后续课程；今天只需要定位这条边界。</p>
+            <p>随时可以打开<a href="../reference/runtime-path.html">推理调用链速查</a>。</p>
+        </section>
+
+        <section class="checkpoint">
+            <h2>动手定位</h2>
+            <ol>
+                <li>在 IDE 中打开 <code>eval_omni.py</code>，找到 <code>main()</code>。</li>
+                <li>从文本模式的 <code>eval_sample()</code> 调用跳转到函数定义。</li>
+                <li>从 <code>model.generate()</code> 跳转到 <code>model/model_omni.py</code>。</li>
+                <li>确认实际调用的是 Omni 自己的 <code>generate()</code>，不是父类 MiniMind 的同名方法。</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>检索练习</h2>
+            <p>先不翻上文，用自己的话回答，再核对答案。</p>
+
+            <div class="exercise">
+                <p><strong>问题 1：</strong><code>--weight sft_omni</code> 为什么最终会读取 <code>sft_omni_768.pth</code>？</p>
+                <button type="button" data-reveal="answer-1" aria-expanded="false">核对答案</button>
+                <p class="answer" id="answer-1">因为 <code>init_model()</code> 用权重前缀、隐藏维度和可选的 MoE 后缀拼接检查点路径。</p>
+            </div>
+
+            <div class="exercise">
+                <p><strong>问题 2：</strong><code>apply_chat_template()</code> 和 tokenizer 分别做什么？</p>
+                <button type="button" data-reveal="answer-2" aria-expanded="false">核对答案</button>
+                <p class="answer" id="answer-2">前者把消息列表格式化成模型训练时使用的对话字符串；后者把字符串转换成 token id。</p>
+            </div>
+
+            <div class="exercise">
+                <p><strong>问题 3：</strong>为什么本次调用会进入 <code>stream_generate()</code>？</p>
+                <button type="button" data-reveal="answer-3" aria-expanded="false">核对答案</button>
+                <p class="answer" id="answer-3">因为 <code>eval_sample()</code> 调用 <code>model.generate()</code> 时显式传入了 <code>stream=True</code>。</p>
+            </div>
+        </section>
+
+        <section class="outcome">
+            <h2>提交本课结果</h2>
+            <p>回到对话中，不看答案写出下面这条链路，并用一句话解释每个函数的职责：</p>
+            <pre><code>main → init_model → eval_sample → generate → stream_generate → forward</code></pre>
+            <p>我会根据你的复述判断下一课是继续进入 <code>MiniMindOmni.__init__</code>，还是先补 PyTorch 模型结构与状态字典。</p>
+        </section>
+    </main>
+
+    <footer class="page-footer">
+        第一手材料：<a href="../../eval_omni.py">eval_omni.py</a> · <a href="../../model/model_omni.py">model/model_omni.py</a>。遇到任何不清楚的调用，直接回到对话提问。
+    </footer>
+    <script src="../assets/lesson.js"></script>
+</body>
+</html>
