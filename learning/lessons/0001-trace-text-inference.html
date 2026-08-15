@@ -24,8 +24,8 @@
         <section>
             <h2>先运行最小文本模式</h2>
             <p>在项目根目录执行。限制生成长度并关闭音频解码，减少第一次观察的干扰；看到第一条完整输出后可以停止程序。</p>
-            <pre><code>conda activate myminimind01
-python eval_omni.py --load_from model --weight sft_omni --mode 0 --prompt_lang 0 --max_new_tokens 32 --decode_audio 0</code></pre>
+            <pre><code>conda activate minimindo
+python eval_omni.py --load_from model --weight sft_omni --mode 1</code></pre>
             <p class="source-note">本课主材料是项目源码 <a href="../../eval_omni.py"><code>eval_omni.py</code></a>。模型整体设计可对照作者的 <a href="https://arxiv.org/abs/2605.03937">MiniMind-O Technical Report</a>。</p>
         </section>
 

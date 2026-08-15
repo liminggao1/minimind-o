@@ -171,7 +171,7 @@ modelscope download --model gongjy/minimind-3o-pytorch --local_dir ./out
 ```bash
 # 环境安装
 conda install --override-channels `
-  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge `
+  -c https://mirrors.nju.edu.cn/anaconda/cloud/conda-forge `
   ffmpeg
 
 python eval_omni.py --load_from model --weight sft_omni

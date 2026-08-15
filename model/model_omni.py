@@ -107,8 +107,8 @@ class MiniMindOmni(MiniMindForCausalLM):
     def __init__(self, config: OmniConfig = None, audio_encoder_path="./model/SenseVoiceSmall", vision_model_path="./model/siglip2-base-p32-256-ve"):
         config = config or OmniConfig()
         super().__init__(config)
-        object.__setattr__(self, 'thinker', self.model)  # alias: self.thinker == self.model
-        object.__setattr__(self.model, 'lm_head', self.lm_head)  # alias: self.thinker.lm_head == self.lm_head
+        object.__setattr__(self, 'thinker', self.model)  # 使用object.__setattr__设置别名属性：thinker指向主干文本模型self.model
+        object.__setattr__(self.model, 'lm_head', self.lm_head)  # 给主干model挂载lm_head别名，self.thinker.lm_head 等价于顶层self.lm_head
         self.talker = TalkerModule(config)
         self.audio_proj = MMAudioProjector(config.audio_hidden_size, config.hidden_size)
         self.vision_proj = MMVisionProjector(config.image_hidden_size, config.hidden_size, target_tokens=config.image_token_len)
