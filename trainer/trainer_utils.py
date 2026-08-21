@@ -49,15 +49,18 @@ def setup_seed(seed: int):
 
 def log_model_params(model, ignore_patterns=['audio_encoder', 'vision_encoder']):
     def should_count(n): return not any(p in n for p in ignore_patterns)
+    # 计算模型总参数量（以百万为单位），忽略指定的参数模式
     total = sum(p.numel() for n, p in model.named_parameters() if should_count(n)) / 1e6
     cfg = model.config
     n_routed = getattr(cfg, 'n_routed_experts', getattr(cfg, 'num_experts', 0))
     n_active = getattr(cfg, 'num_experts_per_tok', 0)
     n_shared = getattr(cfg, 'n_shared_experts', 0)
+    # 拿第0号路由专家，得到单个路由专家参数量
     expert = sum(p.numel() for n, p in model.named_parameters() if 'mlp.experts.0.' in n and should_count(n)) / 1e6
+    # 拿第0号共享专家，得到单个共享专家参数量
     shared_expert = sum(p.numel() for n, p in model.named_parameters() if 'mlp.shared_experts.0.' in n and should_count(n)) / 1e6
-    base = total - (expert * n_routed) - (shared_expert * n_shared)
-    active = base + (expert * n_active) + (shared_expert * n_shared)
+    base = total - (expert * n_routed) - (shared_expert * n_shared)# base：主干基础参数量（去掉全部路由专家、全部共享专家之后）
+    active = base + (expert * n_active) + (shared_expert * n_shared)# MoE有效激活参数量：主干 + 每个token实际用到的专家 + 全部共享专家
     if active < total: Logger(f'Model Params: {total:.2f}M-A{active:.2f}M')
     else: Logger(f'Model Params: {total:.2f}M')
 

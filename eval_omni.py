@@ -16,14 +16,12 @@ warnings.filterwarnings("ignore")
 
 
 def init_model(args):
-    # 从model目录加载
-    tokenizer = AutoTokenizer.from_pretrained(args.load_from)
-    # 2. 判断加载来源：如果是本地训练好的模型（路径中包含 'model' 字样）
+    tokenizer = AutoTokenizer.from_pretrained(args.load_from)# 先加载分词器
+    # 再加载模型，默认load_from="model"，表示从本地加载MiniMindOmni模型权重
     if "model" in args.load_from:
         moe_suffix = "_moe" if args.use_moe else ""
         # ./out/sft_omni_768_moe.pth
         ckp = f"./{args.save_dir}/{args.weight}_{args.hidden_size}{moe_suffix}.pth"
-        # 实例化自定义的多模态模型 MiniMindOmni
         model = MiniMindOmni(
             # 传入配置对象，包含隐藏层大小、层数、是否使用 MoE
             OmniConfig(
@@ -31,11 +29,9 @@ def init_model(args):
                 num_hidden_layers=args.num_hidden_layers,
                 use_moe=bool(args.use_moe),
             ),
-            # 指定音频编码器（SenseVoiceSmall）和视觉编码器（SigLIP）的本地路径
             audio_encoder_path="./model/SenseVoiceSmall",
             vision_model_path="./model/siglip2-base-p32-256-ve",
         )
-
         # 加载本地保存的模型权重（checkpoint）
         # strict=False 表示允许部分键不匹配（例如用于微调时加载部分权重）
         model.load_state_dict(
@@ -44,7 +40,6 @@ def init_model(args):
             ),  # 加载 .pth 文件，并映射到指定设备
             strict=False,
         )
-
     else:
         # 3. 否则，从 Hugging Face 加载预训练模型（信任远程代码）
         model = AutoModelForCausalLM.from_pretrained(
@@ -53,25 +48,15 @@ def init_model(args):
         )
         # 手动为模型挂载音频编码器和处理器（因为预训练模型可能不包含多模态部分）
         model.audio_encoder, model.audio_processor = MiniMindOmni.load_sensevoice("./model/SenseVoiceSmall")
-        # 手动挂载视觉编码器和处理器
         model.vision_encoder, model.vision_processor = MiniMindOmni.load_vision("./model/siglip2-base-p32-256-ve")
-
     # 4. 打印/记录模型参数量（用于调试或监控）
     log_model_params(model)
-
-    # 5. 将音频编码器（如果存在）移动到指定设备（GPU/CPU）
     if model.audio_encoder is not None:
         model.audio_encoder.to(args.device)
-
-    # 6. 将视觉编码器（如果存在）移动到指定设备
     if model.vision_encoder is not None:
         model.vision_encoder.to(args.device)
-
     # 7. 加载 Mimi 音频编解码模型（用于音频 token 化），并设置为评估模式
     model.mimi_model = MimiModel.from_pretrained("./model/mimi").eval()
-
-    # 8. 将整个模型转为半精度（half），设置为评估模式，并移动到目标设备
-    #    最后返回模型和分词器
     return model.half().eval().to(args.device), tokenizer
 
 
@@ -89,49 +74,36 @@ def eval_sample(
     ref_codes=None,#参考音频的Mimi codes（用于语音克隆）
     spk_emb=None,#说话人嵌入（用于语音克隆）
 ):
-    # 1. 构建对话消息：如果有历史记录则拼接，否则只使用当前用户消息
     messages = (history or []) + [{"role": "user", "content": prompt}]
-
-    # 2. 应用聊天模板将消息转换为模型输入的文本字符串（添加生成提示，如<|im_start|>等）
+    # 应用聊天模板将消息转换为模型输入的文本字符串（添加生成提示，如<|im_start|>等）
     inputs_text = tokenizer.apply_chat_template(
         messages,
         tokenize=False,  # 暂不tokenize，只返回字符串
         add_generation_prompt=True,  # 添加生成前缀（如"<|im_start|>assistant\n"）
         open_thinking=bool(args.open_thinking),  # 是否启用思维链（根据模型自定义）
     )
-
-    # 3. 对文本进行tokenize，并转换为模型输入张量（形状 [1, seq_len]）
-    #    例如：inputs_text = "你好，请介绍一下自己。" -> tokenizer得到 [101, 234, 567, 890,....] 的token ids.这是 Python 的 列表（List）。它的 长度（len） 是 15。此时，它只是一串普通数字，没有形状（Shape）的概念，也不能做矩阵运算.
-    # 然后变成tensor([101, 234, 567, 890,....])的张量，
-    # [None, ...]:变成了 torch.Size([1, 15]),这就是平常理解的 [1, 15]：1 代表批次（Batch），15 代表序列长度（Seq_len）
+    # X=文本token ids，形状为 [1, seq_len]，并移动到指定设备（如GPU）
     x = torch.tensor(
         tokenizer(inputs_text).data["input_ids"], dtype=torch.long, device=args.device
-    )[None, ...]  # 增加batch维度，形状变为 [1, seq_len]
-
-    audio_frames = []  # 用于存储生成过程中产生的音频帧（Mimi codes）
-    # 每个元素是一个长度为8的列表（或元组），代表一帧音频token
-
-    # 4. 进入推理模式（不计算梯度）
+    )[None, ...]
+    audio_frames = []# 音频帧（Mimi codes），维度为 [N, 8]，N是生成的帧数，每帧包含8个Mimi codes
     with torch.no_grad():
-        # 调用模型的generate方法进行自回归生成
-        # 返回一个生成器，逐步产出 (文本token列表, 音频帧)
         res_y = model.generate(
-            x,  # 输入文本token ids，形状 [1, seq_len]
-            tokenizer.eos_token_id,  # 结束标记id
-            max_new_tokens=args.max_new_tokens,  # 最大生成token数，例如512
-            temperature=args.temperature,  # 采样温度，值越大（如 1.0），输出越随机
+            x,  
+            tokenizer.eos_token_id,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,  
             top_p=args.top_p,  # nucleus采样阈值，只从累积概率达到 top_p 的最小词汇集合里采样，提高生成质量
             stream=True,  # 流式输出True 表示“吐一个词就立刻返回一个词”，用于打字机效果；False 表示思考完所有词才一次性返回。
             return_audio_codes=True,  # 同时返回音频codes
             open_thinking=bool(args.open_thinking),  # 是否启用思维链
-            audio_inputs=audio_inputs,  # 输入音频特征，可能形状 [batch, T, feat_dim] T 是时间帧数，F 是特征维度
+            audio_inputs=audio_inputs,  # 输入音频特征，形状 [batch, T, feat_dim] T 是时间帧数，F 是特征维度
             audio_lens=audio_lens,  # 输入音频长度（每帧有效长度）
-            pixel_values=pixel_values,  # 输入图像张量，形状 [batch, C, H, W]（例如 [1, 3, 224, 224]）3 是 RGB 通道，224 是宽高。模型会通过视觉编码器看懂图片内容
-            ref_codes=ref_codes,  # 参考音频的Mimi codes，形状 [1, 8, T_ref]8,是特征维度,T：比如 Mimi 的帧率是 80Hz（每秒 80 帧）。如果参考音频长 3 秒，那么 T_ref = 240。如果长 0.5 秒，T_ref = 40。
-            spk_emb=spk_emb,  # 说话人嵌入，形状 [1, emb_dim]192、256 或 512。这个维度是固定的，不随音频时长变化，这是一个经过说话人验证模型（如 ECAPA-TDNN 或 WavLM）提取出来的高维浮点数特征向量。
+            pixel_values=pixel_values,  # 输入图像张量，形状 [batch, C, H, W]（例如 [1, 3, 224, 224]）3 是 RGB 通道，224 是宽高。
+            ref_codes=ref_codes,  # 参考音频的Mimi codes，形状 [1, 8, T_ref]，Mimi 的帧率是 80Hz（每秒 80 帧）。参考音频长 3 秒，T_ref = 240。长 0.5 秒，T_ref = 40。
+            spk_emb=spk_emb,  # 说话人嵌入，形状 [1, emb_dim]，emb_dim=192。
         )
-
-        # 5. 处理流式输出：打印文本，收集音频帧
+        # 处理流式输出：打印文本，收集音频帧
         print("📒 [Thinker]: ", end="", flush=True)
         history_idx = 0  # 用于跟踪已打印的文本长度（去重）
 
@@ -223,7 +195,7 @@ def main():
     )
     parser.add_argument("--max_new_tokens", default=512, type=int, help="最大生成长度")
     parser.add_argument(
-        "--temperature", default=0.7, type=float, help="Thinker生成温度"
+        "--temperature", default=0.7, type=float, help=" 生成温度"
     )
     parser.add_argument("--top_p", default=0.85, type=float, help="nucleus采样阈值")
     parser.add_argument(
@@ -252,13 +224,13 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        default="0",
+        default="1",
         type=str,
         help="评估模式：-1=all 0=text 1=multi 2=audio 3=clone 4=image 5=mix（逗号组合，如 2,5）",
     )
     parser.add_argument(
         "--prompt_lang",
-        default=0,
+        default=1,
         type=int,
         choices=[0, 1, 2],
         help="问题语言：0=英文 1=中文 2=英文+中文",
@@ -321,10 +293,7 @@ def main():
                     {"role": "user", "content": "你好"},
                     {"role": "assistant", "content": "你好！有什么可以帮你的吗？"},
                     {"role": "user", "content": "我想找点事做，你有什么建议吗？"},
-                    {
-                        "role": "assistant",
-                        "content": "可以听听音乐或者看看书，放松一下心情。",
-                    },
+                    {"role": "assistant","content": "可以听听音乐或者看看书，放松一下心情。"},
                 ],
                 "prompt": "好的，那我去照做了，谢谢你",
             },
