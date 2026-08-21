@@ -90,7 +90,7 @@ class RMSNorm(torch.nn.Module):
 def precompute_freqs_cis(dim: int, end: int = int(32 * 1024), rope_base: float = 1e6, rope_scaling: dict = None):
     """
     预计算 sin/cos 表，供后续 apply_rotary_pos_emb 使用
-    dim: 每个头的维度（head_dim）
+    dim: 每个头的维度（head_dim）=96
     end: 最大序列长度
     rope_base: RoPE 基值
     rope_scaling: YaRN 缩放配置（可选）
