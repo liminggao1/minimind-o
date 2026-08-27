@@ -79,11 +79,13 @@ class OmniDataset(Dataset):
     @staticmethod
     def process_audio(audio_path, audio_processor):
         """加载音频并预处理成fbank，返回 (fbank (T,560), valid_len=encoder输出帧数)"""
-        wav, sr = sf.read(audio_path)
-        if wav.ndim > 1: wav = wav.mean(axis=1)
+        wav, sr = sf.read(audio_path)#wav：音频采样数据, sr：原始采样率
+        if wav.ndim > 1: wav = wav.mean(axis=1)#如果是双声道或多声道音频，将多个声道平均成单声道
+        #如果采样率不是 16000 Hz，就重采样到 16000 Hz，因为 SenseVoice 音频编码器要求这个采样率
         if sr != 16000: wav = librosa.resample(wav.astype(float), orig_sr=sr, target_sr=16000)
+        #使用音频处理器把原始波形转换成模型输入特征，通常是形状类似 (1,T, 560) 的梅尔频谱特征，其中 1：batch 维,T 是时间帧数，560 是特征维度
         inputs = audio_processor(wav.astype(np.float32), sampling_rate=16000, return_tensors="pt", return_attention_mask=True)
-        valid_len = inputs.attention_mask.sum().item()
+        valid_len = inputs.attention_mask.sum().item()#计算有效音频帧的数量，得到 valid_len，用于区分真实音频帧和填充帧
         return inputs.input_features.squeeze(0), valid_len
 
     def augment_wav(self, wav, sr=16000):

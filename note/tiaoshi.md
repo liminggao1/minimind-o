@@ -6,8 +6,8 @@ if present is not None:
     print("key shape:", k.shape)
     print("value shape:", v.shape)
     print("batch:", k.shape[0])
-    print("num_heads:", k.shape[1])
-    print("cached_seq_len(已经缓存token数量):", k.shape[2])
+    print("seq_len:", k.shape[1])
+    print("num_kv_heads:", k.shape[2])
     print("head_dim:", k.shape[3])
 else:
     print("present is None，use_cache关闭")

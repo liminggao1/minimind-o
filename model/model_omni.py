@@ -163,11 +163,11 @@ class MiniMindOmni(MiniMindForCausalLM):
 
     @torch.compiler.disable
     def encode_audio_inputs(self, audio_inputs, audio_lens=None):
-        #audio_inputs=（3，150帧，80维）表示3个batch，150帧，每帧80维特征
+        #audio_inputs=（3，150帧，560维）表示3个batch，150帧，每帧560维特征
         if (audio_inputs is None) or (self.audio_encoder is None) or (not audio_inputs.any()): return None
         batch_mask = audio_inputs.flatten(1).any(1)#batch_mask=[True, True, False]，表示第0、1个样本有效，第2个样本无效
         enc_dtype = next(self.audio_encoder.parameters()).dtype
-        valid_fbank = audio_inputs[batch_mask].to(dtype=enc_dtype)#valid_fbank=[2，150帧，80维]
+        valid_fbank = audio_inputs[batch_mask].to(dtype=enc_dtype)#valid_fbank=[2，150帧，560维]
         #audio_lens = tensor([40, 90, 0])
         if audio_lens is not None:
             valid_lens = audio_lens[batch_mask].to(valid_fbank.device)#valid_lens=[40, 90]，表示第0个样本有效帧数为40，第1个样本有效帧数为90
@@ -199,13 +199,13 @@ class MiniMindOmni(MiniMindForCausalLM):
 
     @torch.compiler.disable
     def inject_audio_features(self, tokens, h, audio_feats):
-        #tokens=（3，30），h=（3，30，768），audio_feats= [tensor([40, 768]), tensor([75, 768]), None]
-        if audio_feats is None or not self.config.audio_ids:
+        #tokens=（1，40），h=（1，40，768），audio_feats= tensor([23, 768])
+        if audio_feats is None or not self.config.audio_ids:#模型配置没有开启音频能力，没有定义音频占位 token
             return h
         marker = self.config.audio_ids[0]# 音频占位特殊token id
         out = []
         for b in range(h.size(0)):
-            #hb=（30，768），seq=[token_id1, token_id2, ..., token_id30]，i=0
+            #hb=（40，768），seq=[token_id1, token_id2, ..., token_id40]，i=0
             hb, seq, i = h[b], tokens[b].tolist(), 0
             af = audio_feats[b] if audio_feats[b] is not None else None
             while i < len(seq):
@@ -214,16 +214,16 @@ class MiniMindOmni(MiniMindForCausalLM):
                     while i < len(seq) and seq[i] == marker:
                         i += 1# 循环结束后：[start=2, i=5) 这一段全部是音频占位token
                     if af is not None:#af=tensor([40, 768])
-                        #hb=（30，768）,inject_len=3
+                        #hb=（40，768）,inject_len=27-4=23
                         inject_len = min(af.size(0), i - start)
-                        #hb=hb[:2]+af[:3]+hb[5:]
+                        #hb=hb[:4]+af[:23]+hb[4+23:]，表示把音频特征注入到文本特征中
                         hb = torch.cat((hb[:start], af[:inject_len], hb[start + inject_len:]), dim=0)
                         af = None
                 else:
                     i += 1
             out.append(hb)
-        #out = [tensor([30, 768]),tensor([30, 768]),tensor([30, 768])]
-        return torch.stack(out) #return=tensor([3, 30, 768])
+        #out = [tensor([40, 768]),tensor([40, 768]),tensor([40, 768])]
+        return torch.stack(out) #return=tensor([3, 40, 768])
     
     @staticmethod
     def load_vision(path):
@@ -293,16 +293,18 @@ class MiniMindOmni(MiniMindForCausalLM):
                     i += 1
             out.append(hb)
         return torch.stack(out)#return=tensor([3, 30, 768])
-
+    #已经通过args参数传入：audio_inputs=（3，23帧，560维）表示3个batch，23帧，每帧560维特征，audio_lens=tensor([23, 23, 23])表示每个batch的有效帧长度
     def forward(self, input_ids, attention_mask=None, past_key_values=None, use_cache=False, logits_to_keep=0, audio_inputs=None, audio_lens=None, pixel_values=None, **args):
         if len(input_ids.shape) == 2:#文本模式input_ids=（3，30）
             batch_size, seq_length = input_ids.shape
             text_ids = input_ids
             audio_ids = torch.full((batch_size, 8, seq_length), self.audio_pad_token, dtype=torch.long, device=input_ids.device)
-        else:#多模态模式input_ids=（3，9，30），其中第0-7维是音频token，第8维是文本token
+        else:
+            #多模态模式输入input_ids=（3，9，30）第二次(1,9,1)，1-8维是音频，第9维是文本token。
+            #输出text_ids=（3，30），audio_ids=（3，8，30）第二次text_ids=（1，1），audio_ids=（1，8，1）表示用第一次生成的token？
             batch_size, _, seq_length = input_ids.shape
             text_ids, audio_ids = input_ids[:, 8, :], input_ids[:, :8, :]
-            #text_ids=（3，30），audio_ids=（3，8，30）
+            
         # 兼容处理：如果past_key_values是带layers属性的对象，不是标准元组格式，则强制置为None，重新prefill
         if hasattr(past_key_values, 'layers'): past_key_values = None
         n_thinker, n_talker = len(self.thinker.layers), len(self.talker.layers)
@@ -322,9 +324,9 @@ class MiniMindOmni(MiniMindForCausalLM):
         hidden_states = self.thinker.dropout(self.thinker.embed_tokens(text_ids))
         position_embeddings = (self.thinker.freqs_cos[start_pos:start_pos + seq_length], self.thinker.freqs_sin[start_pos:start_pos + seq_length])
         if audio_inputs is not None and start_pos == 0:#只在生成第一个token时执行一次
-            #输入：audio_inputs=（3，150帧，80维），输出：#audio_features= [tensor([40, 768]), tensor([75, 768]), None]
+            #输入：audio_inputs=（3，23帧，560维），输出：#audio_features= [tensor([23, 768]), xxx, xxx]
             audio_features = self.encode_audio_inputs(audio_inputs, audio_lens)
-            #text_ids=（3，30），hidden_states=（3，30，768），audio_features= [tensor([40, 768]), tensor([75, 768]), None]
+            #text_ids=（3，30），hidden_states=（3，30，768），audio_features= [tensor([23, 768]), tensor([75, 768]), None]输出hidden_states=（3，30，768）此时已经含有音频特征。
             hidden_states = self.inject_audio_features(text_ids, hidden_states, audio_features)
             
         # 图像处理：仅第一轮推理start_pos==0执行；续写不再重复编码图像
@@ -354,7 +356,7 @@ class MiniMindOmni(MiniMindForCausalLM):
             hidden_states = self.count_vision_proj(tokens=text_ids, h=hidden_states, vision_tensors=vision_tensors, seqlen=seq_length)
         bridge_states = hidden_states
         for i, (layer, past_key_value) in enumerate(zip(self.thinker.layers, past_key_values[:n_thinker])):
-            #hidden_states维度不变=>(3，30，768)，present=更新后的kvcache元组(k_tensor, v_tensor)，其中：(batch=3,head=12, KV缓存中已经保存的token数量=4, 多注意力头维度96)
+            #hidden_states维度不变=>(3，30，768)，第二次维度是（1，1，768），present=更新后的kvcache元组(k_tensor, v_tensor)，其中：(batch=3,seq_len=30, KV attention heads=4, 多注意力头维度96)第二次运行到这里变成(1,31,4,96)
             hidden_states, present = layer(hidden_states, position_embeddings, past_key_value=past_key_value, 
                                            use_cache=use_cache, attention_mask=attention_mask)
             presents.append(present)
@@ -363,7 +365,7 @@ class MiniMindOmni(MiniMindForCausalLM):
 
         # ======= Talker: thinker hidden + audio codes, output audio logits =======
         
-        #输入audio_ids=（3，8，30），输出talker_emb=（3，30，768）其中的8被求平均了，spk_emb=（3，192）
+        #输入audio_ids=（3，8，30），第二次运行到这（1，8，1），输出talker_emb=（3，30，768）第二次变成（1，1，768）其中的8被求平均了，spk_emb=（3，192）
         talker_emb = self.talker.embed_tokens(audio_ids)
         spk_emb = args.get('spk_emb', None)
         if spk_emb is not None:
@@ -390,7 +392,7 @@ class MiniMindOmni(MiniMindForCausalLM):
         + sum(p.sum() for p in self.vision_proj.parameters()) * 0 
         + sum(p.sum() for p in self.talker.lm_head.adapters.parameters()) * 0 
         + sum(p.sum() for p in self.talker.spk_proj.parameters()) * 0 
-        #h_thinker=（3，30，768）,text_logits=（3，30，6400）表示3个batch，每个batch30个token，每个token预测6400个文本token的概率分布
+        #h_thinker=（3，30，768）第二次（1，1，768）,text_logits=（3，30，6400），第二次（1，1，6400）表示3个batch，每个batch30个token，每个token预测6400个文本token的概率分布
         text_logits = self.thinker.lm_head(h_thinker[:, slice_indices, :])
         audio_logits = self.talker.lm_head(h_talker[:, slice_indices, :])
         #audio_logits=（3，30，2112）表示3个batch，每个batch30个token，每个token预测2112个音频token的概率分布
@@ -407,9 +409,9 @@ class MiniMindOmni(MiniMindForCausalLM):
         return tokens[-1] if tokens else input_ids
 
     def stream_generate(self, input_ids, eos_token_id, max_new_tokens, temperature, top_p, rp, use_cache, return_audio_codes=False, **args):
-        # input_ids=[3,30],表示3,个patch，30个token长度,
-        # start_pos=输入序列的token长度  past_kvs=KV‑Cache缓存初始为空
-        # text_finished=文本是否已经生成结束 first_finished=是否是第一轮step
+        # input_ids=[3,30],表示3,个patch，30个token长度（可能全是填充的音频pad）
+        # start_pos=30输入序列的token长度  past_kvs=KV‑Cache缓存初始为空
+        # text_finished=false文本是否已经生成结束 first_finished=true是否是第一轮step
         start_pos, past_kvs, text_finished, first_finished = input_ids.shape[1], None, False, True
         #audio_codes=[[], [], [], [], [], [], [], []]，存储生成的音频token id
         audio_codes = [[] for _ in range(8)]
@@ -417,7 +419,7 @@ class MiniMindOmni(MiniMindForCausalLM):
         audio_buffer = torch.full((1, 8, start_pos), self.audio_pad_token, dtype=torch.long, device=input_ids.device)#audio_buffer=[3,8,30]，3个patch，表示8个音频层，每层30个token长度
         
         spk_emb = args.get('spk_emb', None)
-        ref_codes = args.get('ref_codes', None)#ref_codes=[1, 8, T_ref]
+        ref_codes = args.get('ref_codes', None)#参考音频?ref_codes=[1, 8, T_ref]
         ref_len = ref_codes.shape[2] if ref_codes is not None else 0
         spk_reserve = 1 if spk_emb is not None else 0
         fill_end = start_pos# =30
@@ -443,12 +445,12 @@ class MiniMindOmni(MiniMindForCausalLM):
             else:
                 out = self.forward(torch.cat((audio_buffer[:, :, -1:], input_ids[:, -1:].unsqueeze(1)), dim=1), past_key_values=past_kvs, use_cache=use_cache, **args)
             past_kvs = out.past_key_values
-            #logits=选中第0个batch，的最后一个token，表示最后一个token的预测分布
+            #logits选中第0个batch的最后一个token，表示最后一个token的预测分布
             logits = out.logits[0, -1, :].clone() / (temperature + 1e-9)
             if rp != 1.0:#重复惩罚：对已经生成过的token，降低其logits值，降低再次生成的概率
                 seen = list(set(input_ids[0].tolist())); score = logits[seen]; logits[seen] = torch.where(score > 0, score / rp, score * rp)
-            if top_p and top_p < 1.0:#sorted_l=
-                sorted_l, sorted_i = torch.sort(logits, descending=True)
+            if top_p and top_p < 1.0:#sorted_l=从大到小排好的logits数值，sorted_i: 对应原来token的下标索引
+                sorted_l, sorted_i = torch.sort(logits, descending=True)#保留累加概率达到 0.85 的一小部分候选 token，剩下全部屏蔽
                 mask = torch.cumsum(F.softmax(sorted_l, dim=-1), dim=-1) > top_p
                 mask[1:], mask[0] = mask[:-1].clone(), False
                 logits[sorted_i[mask]] = -float('Inf')
@@ -471,9 +473,9 @@ class MiniMindOmni(MiniMindForCausalLM):
                 if audio_step < i:
                     audio_codes[i].append(self.audio_pad_token)
                 else:
-                    #al=（3，30，2112),logits_i=（2112）
+                    #al=（3，30，2112),logits_i=（2112）#logits选中第0个batch的最后一个token，表示最后一个token的预测分布
                     logits_i = al[0, -1, :].clone() / 0.2
-                    #prev_code=一个音频token id，audio_codes[i][-3:]=最近3个音频token id
+                    #audio_codes[i][-3:]=最近3个音频token id,抑制重复生成一模一样的音频
                     for prev_code in audio_codes[i][-3:]: 
                         score = logits_i[prev_code]; 
                         logits_i[prev_code] = torch.where(score > 0, score / 1.05, score * 1.05)
@@ -495,13 +497,13 @@ class MiniMindOmni(MiniMindForCausalLM):
             # all(...)：判断8个音频通道全部都已经记录停止位置（全部通道生成完毕）
             if text_finished and all(audio_stop_pos[i] is not None for i in range(8)): 
                 break
-            #输入：input_ids=（1，30）输出：input_ids=（1，31）
+            #文本输入：input_ids=（1，30）输出：input_ids=（1，31）
             input_ids = torch.cat((input_ids, torch.tensor([[text_token]], device=input_ids.device)), dim=1)
             #audio_buffer=（1，8，30）输出：audio_buffer=（1，8，31），在最后一维增加一个音频token长度
             audio_buffer = torch.cat((audio_buffer, torch.full((1, 8, 1), self.audio_pad_token, dtype=torch.long, device=input_ids.device)), dim=2)
             # audio_step较小时，只回填已经生成完成的前面几路通道；最多8路，防止越界
             for i in range(min(audio_step + 1, 8)): 
-                # # audio_codes[i][-1]：取出第i通道刚刚生成的最新音频code,覆盖最新一帧的audio_buffer[0,i,-1]
+                # audio_codes[i][-1]：取出第i通道刚刚生成的最新音频code,覆盖最新一帧的audio_buffer[0,i,-1]
                 audio_buffer[0, i, -1] = audio_codes[i][-1]
             
             audio_frame = None

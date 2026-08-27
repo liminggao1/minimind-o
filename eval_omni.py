@@ -66,11 +66,11 @@ def eval_sample(
     args,
     idx,
     prompt,
-    audio_inputs,#输入的音频特征（如音频token或编码器输出）
+    audio_inputs,#输入的音频特征（如音频token或编码器输出）（1，23，560）
     output_name,#输出音频文件名（如 .mp3）
     pixel_values=None,#图像输入（可选）
     history=None,#对话历史（消息列表，可选）
-    audio_lens=None,#音频帧长度（用于padding等）
+    audio_lens=None,#有效音频帧长度（用于padding等）=tensor([23])
     ref_codes=None,#参考音频的Mimi codes（用于语音克隆）
     spk_emb=None,#说话人嵌入（用于语音克隆）
 ):
@@ -97,8 +97,8 @@ def eval_sample(
             stream=True,  # 流式输出True 表示“吐一个词就立刻返回一个词”，用于打字机效果；False 表示思考完所有词才一次性返回。
             return_audio_codes=True,  # 同时返回音频codes
             open_thinking=bool(args.open_thinking),  # 是否启用思维链
-            audio_inputs=audio_inputs,  # 输入音频特征，形状 [batch, T, feat_dim] T 是时间帧数，F 是特征维度
-            audio_lens=audio_lens,  # 输入音频长度（每帧有效长度）
+            audio_inputs=audio_inputs,  # 输入音频特征，形状 [batch=1, T=23, feat_dim=560] T 是时间帧数，F 是特征维度
+            audio_lens=audio_lens,  # 输入音频长度（每帧有效长度）audio_lens = tensor([23],
             pixel_values=pixel_values,  # 输入图像张量，形状 [batch, C, H, W]（例如 [1, 3, 224, 224]）3 是 RGB 通道，224 是宽高。
             ref_codes=ref_codes,  # 参考音频的Mimi codes，形状 [1, 8, T_ref]，Mimi 的帧率是 80Hz（每秒 80 帧）。参考音频长 3 秒，T_ref = 240。长 0.5 秒，T_ref = 40。
             spk_emb=spk_emb,  # 说话人嵌入，形状 [1, emb_dim]，emb_dim=192。
@@ -111,7 +111,7 @@ def eval_sample(
         # audio_frame 是 Python 列表，内容为 [1024, 2048, 512, 789, 111, 222, 333, 444],形状为 (1, 8)
         for y, audio_frame in res_y:
             if y is not None:
-                # y 是当前步生成的token id列表，形状 [1, 3]，answer=“你好吗？”
+                # y 是当前步生成的token id列表，形状 [batch=1, 3]，answer=“你好吗？”
                 # audio_frame=none
                 answer = tokenizer.decode(y[0].tolist(), skip_special_tokens=True)
                 # 如果非空且不是乱码字符，则增量打印新内容（从上次打印的索引开始）
@@ -224,7 +224,7 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        default="1",
+        default="2",
         type=str,
         help="评估模式：-1=all 0=text 1=multi 2=audio 3=clone 4=image 5=mix（逗号组合，如 2,5）",
     )
@@ -345,6 +345,7 @@ def main():
 
     if "2" in modes:
         print("\n\n==================== audio -> {text, audio} ====================")
+        
         audio_files_en = sorted(
             [
                 f
@@ -364,14 +365,15 @@ def main():
         ]
         for idx, audio_file in enumerate(audio_files):
             print(f"\n🎤 [audio-{idx + 1}]: {audio_file}")
-            #mel=(n_mels, time_frames)=【梅尔滤波器的数量，时间帧数】
+            #mel=(T, 560)=【T：时间帧数，560：每帧的特征维度】valid_len=120表示有效帧长度
             mel, valid_len = OmniDataset.process_audio(
                 os.path.join(args.audio_dir, audio_file), model.audio_processor
             )
-            audio_inputs = mel.unsqueeze(0).to(args.device)#形状变为(1, n_mels, time_frames)
-            audio_lens = torch.tensor([valid_len], device=args.device)
-            audio_token_len = valid_len or 1#确保音频 token 长度至少为 1
-            prompt = model.config.audio_special_token * audio_token_len
+            audio_inputs = mel.unsqueeze(0).to(args.device)#形状变为(1, T, 560)
+            audio_lens = torch.tensor([valid_len], device=args.device)#把有效帧数转换成张量
+            audio_token_len = valid_len or 1#如果 valid_len 不为 0，使用它；如果为 0，就使用 1
+            
+            prompt = model.config.audio_special_token * audio_token_len#"<|audio_pad|>"*3="<|audio_pad|><|audio_pad|><|audio_pad|>"
             eval_sample(
                 model,
                 tokenizer,
