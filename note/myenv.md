@@ -157,3 +157,8 @@ uv pip uninstall --python $conda_python requests
 uv pip freeze --python $conda_python | Out-File requirements-local.txt -Encoding utf8
 ```
 `requirements-local.txt` 是当前机器的完整快照，不要直接覆盖项目维护的 `requirements.txt`。
+
+## 下载数据集：
+
+modelscope download --dataset gongjy/minimind-o_dataset sft_a2a_mini.parquet --local_dir ./dataset
+modelscope download --dataset gongjy/minimind-o_dataset sft_t2a_mini.parquet --local_dir ./dataset

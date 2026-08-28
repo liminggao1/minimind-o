@@ -25,6 +25,8 @@ Thumbs.db
 /out/
 /checkpoints/
 /scripts/minimind-*/
+/dataset/*.parquet
+/dataset/.msc
 
 # Downloaded datasets and runtime outputs
 /dataset/*.parquet
