@@ -1,36 +1,67 @@
-import argparse, os, sys, json, time, math, torch, threading, queue, base64, io, logging, contextlib
+# 导入基础系统库：命令行解析、文件系统、系统标准输入输出、json序列化、时间、数学计算
+import argparse, os, sys, json, time, math
+# PyTorch深度学习框架、多线程、消息队列、base64编解码、IO内存流、日志、标准输出重定向工具
+import torch, threading, queue, base64, io, logging, contextlib
 import numpy as np
 import torchaudio
+# web服务框架Flask，http请求、流式响应、静态文件返回
 from flask import Flask, request, Response, send_from_directory
-from flask_cors import CORS
-from flask_sock import Sock
-from PIL import Image
-from pydub import AudioSegment
+from flask_cors import CORS# 跨域支持
+from flask_sock import Sock# flask‑sock：websocket支持，用于实时流式交互
+from PIL import Image# PIL图像处理，处理图片输入
+from pydub import AudioSegment# pydub音频处理，音频格式转换
+# 将项目根目录加入python模块搜索路径，使得可以import项目内部自定义模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
 from model.model_omni import MiniMindOmni, RealtimeSession
 from trainer.trainer_utils import log_model_params
 logging.getLogger().setLevel(logging.ERROR)
+# 重定向标准输出，屏蔽funasr加载时大量打印日志
 with contextlib.redirect_stdout(io.StringIO()):
+    # funasr阿里语音识别库：ASR自动语音识别
     from funasr import AutoModel
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
-
+# 初始化Flask Web应用，静态文件当前目录
 app = Flask(__name__, static_folder='.')
+# 开启跨域，允许前端浏览器访问后端接口
 CORS(app)
+# 初始化websocket组件
 sock = Sock(app)
+# 全局字典M：存放全局资源实例，model/tokenizer/device/asr模型等
 M = {}  # model / tokenizer / device / mimi / asr / cfg
+# 音色字典 V： voice_name -> {ref_codes音色参考码, spk_emb说话人音色embedding}
 V = {}  # voice_name -> {ref_codes, spk_emb}
+# 内置音色列表、未见过的新音色列表、手动导入音色列表
 V_builtin, V_unseen, V_manual = [], [], []
+# 多线程锁：防止多请求并发时模型同时被加载/修改
 MODEL_LOCK = threading.Lock()
+# 每一帧音频采样点数
 SAMPLES_PER_FRAME = 1920
+# 音色参考音频帧数
 REF_FRAMES = 300
+# 音色克隆模式标记
 CLONE_VOICE = 'voice_clone'
+# 音色克隆缓存文件保存路径
 CLONE_FILE = 'voice_clone.pt'
 
 # -------- helpers --------
-def sse(d): return f"data: {json.dumps(d)}\n\n"
+# ---------------- 工具辅助函数 helpers ----------------
+# SSE服务端推送协议封装：把字典转为SSE协议字符串，用于http流式输出
+def sse(d):
+    """
+    将字典封装为 SSE（Server-Sent Events）事件字符串。
+    :param d: 待发送的事件数据字典，例如 {"type": "done"}。
+    :return: 以 ``data:`` 开头并以两个换行结尾的 SSE 字符串。
+    """
+    return f"data: {json.dumps(d)}\n\n"
 
 def scan_hf_models(base_dir):
+    """
+    扫描指定目录下的 Hugging Face 格式模型目录。
+    :param base_dir: 模型根目录，例如 ``"./checkpoints"``。
+    :return: 模型名称到绝对路径的字典；例如 ``{"model-v1": "/abs/checkpoints/model-v1"}``。
+    """
     models = {}
     base_dir = os.path.abspath(base_dir)
     for d in sorted(os.listdir(base_dir), reverse=True):
@@ -44,10 +75,25 @@ def scan_hf_models(base_dir):
     return models
 
 def asr_run(samples):
+    """
+    使用 ASR 模型识别一段单声道音频。
+    :param samples: 一维 NumPy 音频采样，采样率为 16000 Hz。
+                    例如一秒音频的形状为 ``(16000,)``。
+    :type samples: np.ndarray
+    :return: 经过后处理的识别文本；无结果返回空字符串。
+    """
     r = M['asr'].generate(input=samples, cache={}, language='auto', use_itn=True)
     return rich_transcription_postprocess(r[0]['text']).strip() if r else ''
 
 def prep_audio(samples):
+    """
+    将音频采样预处理为模型所需的输入特征。
+    :param samples: 一维 NumPy 音频采样，采样率为 16000 Hz、单声道。
+                    例如 ``samples.shape == (16000,)`` 表示一秒音频。
+    :type samples: np.ndarray
+    :return: ``(mel, audio_lens, prompt)``，分别为 Mel 特征张量、有效帧数张量和音频占位 token。
+    :rtype: tuple[torch.Tensor, torch.Tensor, str]
+    """
     m = M['model']
     proc = m.audio_processor(samples, sampling_rate=16000, return_tensors="pt", return_attention_mask=True)
     mel = proc.input_features.squeeze(0).unsqueeze(0).to(M['device'])
@@ -56,10 +102,24 @@ def prep_audio(samples):
     return mel, torch.tensor([vlen], device=M['device']), prompt
 
 def prep_image(b64):
+    """
+    将 base64 编码的图片转换为视觉模型输入。
+    :param b64: 图片的 base64 编码字符串，例如浏览器上传的 JPEG 数据。
+    :type b64: str
+    :return: 视觉处理器输出字典，值已迁移到当前推理设备。
+    :rtype: dict
+    """
     img = Image.open(io.BytesIO(base64.b64decode(b64))).convert('RGB')
     return {k: v.to(M['device']) for k, v in M['model'].vision_processor(images=img, return_tensors="pt").items()}
 
 def build_ids(prompt, history):
+    """
+    将当前输入和历史对话构造成模型输入 token。
+    :param prompt: 当前轮用户文本或多模态占位 prompt，例如 ``"请描述这张图片"``。
+    :param history: 历史对话列表，格式为 ``[{"role": "user", "content": "..."}]``。
+    :return: ``input_ids`` 张量，形状为 ``[1, seq_len]``，位于模型推理设备上。
+    :rtype: torch.Tensor
+    """
     tok, dev, n = M['tokenizer'], M['device'], M['cfg'].max_history_turns
     hist = history[-n:] if n > 0 else []
     msgs = hist + [{"role": "user", "content": prompt}]
@@ -67,6 +127,11 @@ def build_ids(prompt, history):
     return torch.tensor(tok(t).data['input_ids'], dtype=torch.long, device=dev)[None, ...]
 
 def _mimi_decode(frames):
+    """
+    解码 Mimi 音频 code 帧并返回音频波形。
+    :param frames: 音频 code 帧列表，形状为 ``(T, 8)``，例如 ``(50, 8)``。
+    :return: ``(audio, T)``，其中 ``audio`` 为 NumPy 波形数组、``T`` 为有效帧数；无有效输入返回 None。
+    """
     codes = [f for f in frames if f and len(f) == 8]
     if not codes or not M['mimi']: return None
     mc = torch.tensor(codes, dtype=torch.long, device=M['device']).T.unsqueeze(0)
@@ -76,6 +141,14 @@ def _mimi_decode(frames):
     return au, mc.shape[-1]
 
 def pcm_bytes(frames, ov):
+    """
+    解码 Mimi 音频 code，并转换为 int16 PCM 二进制数据。
+    :param frames: 形状为 (T, 8) 的 code 帧。
+                    例如 frames.shape == (20, 8) 表示 20 帧音频。
+    :param ov: 需要丢弃的重叠帧数。
+               例如 ov=2 时，丢弃解码结果开头约 2/20 的样本。
+    :return: int16 PCM 字节；解码失败返回 None。
+    """
     r = _mimi_decode(frames)
     if r is None: return None
     au, T = r
@@ -83,7 +156,13 @@ def pcm_bytes(frames, ov):
     return (au * 32767).astype('int16').tobytes()
 
 def stream_pcm(frames, flush=False):
-    """yield (pcm_bytes,) on chunk boundaries or on final flush."""
+    """
+    流式分块生成 PCM 音频二进制块生成器。
+    累积 Mimi code，达到分块大小则输出音频；flush 为 True 输出剩余尾部片段；支持块间重叠平滑拼接。
+    :param frames: 形状为 (T, 8) 的 Mimi code 帧列表。
+    :param flush: 是否冲刷缓冲区，True 表示会话结束，处理剩余不足整块的数据。
+    :yield: int16 PCM 二进制音频字节。
+    """
     if not M['mimi']: return
     cf, ov_max, n = M['cfg'].audio_chunk_frames, M['cfg'].audio_overlap, len(frames)
     if not flush and n >= cf and n % cf == 0:
@@ -98,6 +177,12 @@ def stream_pcm(frames, flush=False):
             if p: yield p
 
 def voice_args(name):
+    """
+    根据音色名称组装音色推理参数字典。
+    读取音色参考码与说话人 embedding，补充 batch 维度并迁移到推理设备；default 或不存在音色返回空字典。
+    :param name: 音色名称字符串。
+    :return: 包含 ref_codes、spk_emb 的参数字典；无匹配音色返回空 dict。
+    """
     if name and name != 'default' and name in V:
         v = V[name]
         dev = M['device']
@@ -107,6 +192,13 @@ def voice_args(name):
     return {}
 
 def register_voice(name, value, group='manual'):
+    """
+    注册音色到全局音色字典，并维护音色分组列表。
+    将音色存入V字典，加入指定分组；同时把该音色从其他分组中移除，保证一个音色仅归属一个分组。
+    :param name: 音色名称。"tom"
+    :param value: 音色数据字典，包含 ref_codes、spk_emb。{"ref_codes":tensor, "spk_emb":tensor}
+    :param group: 音色分组，可选 builtin / unseen / manual，默认 manual。
+    """
     V[name] = value
     groups = {'builtin': V_builtin, 'unseen': V_unseen, 'manual': V_manual}
     dst = groups[group]
@@ -117,9 +209,18 @@ def register_voice(name, value, group='manual'):
             lst.remove(name)
 
 def clone_voice_path():
+    """
+    获取音色克隆缓存文件的绝对路径。
+    :return: ``model/speaker/voice_clone.pt`` 的路径字符串。
+    """
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'model', 'speaker', CLONE_FILE)
 
 def delete_manual_voice(name):
+    """
+    删除一个手动导入的音色及其持久化数据。
+    :param name: 要删除的手动音色名称，例如 ``"tom"``。
+    :return: 无返回值；名称不存在或不属于手动音色时抛出 RuntimeError。
+    """
     if name not in V_manual:
         raise RuntimeError('只能删除手动克隆的音色')
     out_path = clone_voice_path()
@@ -132,6 +233,11 @@ def delete_manual_voice(name):
         V_manual.remove(name)
 
 def normalize_voice_name(name):
+    """
+    清理并校验用户输入的音色名称。
+    :param name: 用户输入的音色名称，例如 ``"  tom  "`` 会规范化为 ``"tom"``。
+    :return: 去除首尾空白并合并连续空格后的音色名称。
+    """
     name = ' '.join(str(name or '').split())
     if not name:
         name = CLONE_VOICE
@@ -144,6 +250,11 @@ def normalize_voice_name(name):
     return name
 
 def validate_clone_audio(w16):
+    """
+    校验音色克隆音频的时长、音量和环境噪声。
+    :param w16: 采样率为 16000 Hz 的单声道浮点音频张量，幅值通常位于 [-1, 1]。
+    :return: 无返回值；音频不符合要求时抛出 RuntimeError。
+    """
     if w16.numel() < int(16000 * 1.8):
         raise RuntimeError('录音太短，请把整句话读完')
     peak = w16.abs().max().item()
@@ -162,6 +273,11 @@ def validate_clone_audio(w16):
         raise RuntimeError('录音有爆音，请离麦克风远一点')
 
 def build_clone_voice(audio_b64):
+    """
+    从 base64 音频构建音色克隆所需的参考 code 和说话人 embedding。
+    :param audio_b64: 用户上传音频的 base64 字符串，例如 WAV 或 MP3 数据。
+    :return: 包含 ``ref_codes`` 和 ``spk_emb`` 张量的字典，可直接传给推理接口。
+    """
     if M.get('mimi') is None or M.get('campplus') is None or M.get('mel_fn') is None:
         raise RuntimeError('Mimi 或 CAM++ 未加载')
     seg = AudioSegment.from_file(io.BytesIO(base64.b64decode(audio_b64))).set_channels(1).set_sample_width(2)
@@ -191,12 +307,27 @@ def build_clone_voice(audio_b64):
     return {'ref_codes': ref_codes, 'spk_emb': spk_emb}
 
 def run_generate(x, audio_inputs, audio_lens, pixel_values, **kw):
+    """
+    在线程锁保护下流式调用模型生成文本 token 和音频 code。
+    :param x: ``build_ids`` 生成的输入 token 张量。
+    :param audio_inputs: 预处理后的音频特征；无音频时为 None。
+    :param audio_lens: 有效音频长度张量；无音频时为 None。
+    :param pixel_values: 预处理后的图像输入；无图像时为 None。
+    :param kw: 传递给模型 ``generate`` 的其他生成参数。
+    :yield: ``(text_tokens, audio_frame)``，任一项可能为 None。
+    """
     with MODEL_LOCK, torch.no_grad():
         yield from M['model'].generate(
             x, M['tokenizer'].eos_token_id, stream=True, return_audio_codes=True,
             audio_inputs=audio_inputs, audio_lens=audio_lens, pixel_values=pixel_values, **kw)
 
 def load_main_model(model_path, model_name):
+    """
+    加载指定的主模型、分词器及视觉和音频编码器。
+    :param model_path: Hugging Face 格式模型目录路径。
+    :param model_name: 用于状态展示的模型名称，例如 ``"MiniMind-Omni-v2"``。
+    :return: 模型参数量（百万），例如 ``125.3`` 表示约 1.253 亿参数。
+    """
     with MODEL_LOCK:
         [sys.modules.pop(k) for k in list(sys.modules) if 'transformers_modules' in k]
         M.pop('model', None); M.pop('tokenizer', None)
@@ -218,7 +349,15 @@ def load_main_model(model_path, model_name):
         return round(params, 2)
 
 def prepare_turn(text, samples, image_b64, do_asr_for_image):
-    """返回 (audio_inputs, audio_lens, pixel_values, prompt_for_model, user_text_for_history, asr_thread, asr_result)"""
+    """
+    准备一轮多模态对话所需的模型输入。
+    :param text: 用户输入文本，例如 ``"今天天气怎么样"``。
+    :param samples: 16000 Hz 单声道音频采样；无音频时为 None。
+    :param image_b64: 图片 base64 字符串；无图片时为 None。
+    :param do_asr_for_image: 图片输入时是否优先将音频转写为文本。
+    :return: ``(audio_inputs, audio_lens, pixel_values, prompt, user_text, asr_thread, asr_result)``。
+             其中前三项是模型输入，``prompt`` 用于推理，``user_text`` 用于历史记录。
+    """
     audio_inputs = audio_lens = pixel_values = None
     prompt = text or ''
     user_text = text or ''
@@ -231,7 +370,9 @@ def prepare_turn(text, samples, image_b64, do_asr_for_image):
             audio_inputs, audio_lens, prompt = prep_audio(samples)
             if M['cfg'].max_history_turns > 0:
                 sa = samples.copy()
-                def _a(): asr_result[0] = asr_run(sa)
+                def _a():
+                    """在后台线程中执行音频识别并保存结果。"""
+                    asr_result[0] = asr_run(sa)
                 asr_thread = threading.Thread(target=_a); asr_thread.start()
     if image_b64:
         pixel_values = prep_image(image_b64)
@@ -241,20 +382,43 @@ def prepare_turn(text, samples, image_b64, do_asr_for_image):
 
 # -------- routes --------
 @app.route('/')
-def index(): return send_from_directory('.', 'web_demo.html')
+def index():
+    """
+    返回 WebUI 首页。
+    :return: ``web_demo.html`` 静态文件响应。
+    """
+    return send_from_directory('.', 'web_demo.html')
+
 @app.route('/call')
-def call_page(): return send_from_directory('.', 'web_demo.html')
+def call_page():
+    """
+    返回兼容旧路径的 WebUI 页面。
+    :return: ``web_demo.html`` 静态文件响应。
+    """
+    return send_from_directory('.', 'web_demo.html')
 
 @app.route('/voices')
 def get_voices():
+    """
+    获取当前可用的音色列表。
+    :return: JSON 字符串，包含 ``builtin``、``unseen`` 和 ``manual`` 三类音色名称。
+    """
     return json.dumps({'builtin': sorted(V_builtin), 'unseen': sorted(V_unseen), 'manual': sorted(V_manual)})
 
 @app.route('/models')
 def get_models():
+    """
+    获取已扫描模型及当前模型名称。
+    :return: JSON 字符串，包含模型名称列表 ``models`` 和当前模型 ``current``。
+    """
     return json.dumps({'models': list(M.get('models', {}).keys()), 'current': M.get('model_name')})
 
 @app.route('/switch_model', methods=['POST'])
 def switch_model():
+    """
+    切换当前使用的主模型。
+    :return: JSON 响应；成功返回模型名称和参数量，模型不存在或加载失败时返回错误信息。
+    """
     name = (request.json or {}).get('name')
     if name not in M.get('models', {}):
         return Response(json.dumps({'ok': False, 'error': 'unknown model'}), status=400, mimetype='application/json')
@@ -266,6 +430,10 @@ def switch_model():
 
 @app.route('/clone_voice', methods=['POST'])
 def clone_voice():
+    """
+    接收音频并创建或更新一个手动克隆音色。
+    :return: JSON 响应；成功返回音色名称和缓存路径，失败时返回错误信息。
+    """
     d = request.json or {}
     if not d.get('audio'):
         return Response(json.dumps({'ok': False, 'error': 'missing audio'}), status=400, mimetype='application/json')
@@ -283,6 +451,10 @@ def clone_voice():
 
 @app.route('/delete_voice', methods=['POST'])
 def delete_voice():
+    """
+    删除指定的手动克隆音色。
+    :return: JSON 响应；成功返回已删除的音色名称，失败时返回错误信息。
+    """
     d = request.json or {}
     name = ' '.join(str(d.get('name') or '').split())
     if not name:
@@ -295,6 +467,11 @@ def delete_voice():
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    """
+    处理一次 HTTP 多模态对话请求并以 SSE 流式返回结果。
+
+    :return: ``text/event-stream`` 响应，依次推送文本、PCM 音频和完成状态事件。
+    """
     d = request.json
     history = d.get('history', [])
     samples = None
@@ -304,6 +481,11 @@ def chat():
     va = voice_args(d.get('voice', 'default'))
 
     def gen():
+        """
+        生成当前对话的 SSE 事件流。
+
+        :yield: 用户转写、首 token 延迟、文本增量、PCM 音频块和完成状态事件。
+        """
         audio_inputs, audio_lens, pixel_values, prompt, user_text, asr_th, asr_res = prepare_turn(
             d.get('text', ''), samples, d.get('image'), do_asr_for_image=True)
         x = build_ids(prompt, history)
@@ -352,20 +534,29 @@ def chat():
 
 @sock.route('/ws/realtime')
 def realtime(ws):
+    """
+    处理实时 WebSocket 音频会话。
+    接收音频块和会话控制消息，检测语音结束后调用模型，并流式发送文本、PCM 音频及状态事件。
+    :param ws: Flask-Sock WebSocket 连接对象。
+    :return: 无返回值；结果通过 WebSocket 消息发送。
+    """
     session = RealtimeSession(M['vad_path'])
     q = queue.Queue(); alive = [True]; state = {'history': [], 'image': None}
     n_hist = M['cfg'].max_history_turns
 
     def push_audio(data):
+        """将 int16 PCM 音频块送入实时会话并返回 VAD 状态。"""
         return session.push_chunk(np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0)
 
     def set_ctx(msg):
+        """从客户端上下文消息更新历史对话、图片和音色状态。"""
         h = msg.get('history') or []
         state['history'] = h[-n_hist:] if n_hist > 0 else []
         if 'image' in msg: state['image'] = msg.get('image')
         if 'voice' in msg: state['voice'] = msg.get('voice', 'default')
 
     def poll_interrupt():
+        """轮询队列中的实时输入，检测音频打断或停止指令。"""
         while True:
             try: data = q.get_nowait()
             except queue.Empty: return False
@@ -380,6 +571,7 @@ def realtime(ws):
                     session.interrupt = True; return True
 
     def recv_loop():
+        """持续接收 WebSocket 消息并放入队列。"""
         while alive[0]:
             try:
                 data = ws.receive(timeout=1)
@@ -442,51 +634,69 @@ def realtime(ws):
 
 def init_model(args):
     M['cfg'] = args; M['device'] = args.device
-    with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()):# 重定向标准输出，屏蔽SenseVoice加载时大量冗余打印日志
         M['asr'] = AutoModel(model='../model/SenseVoiceSmall', trust_remote_code=True, device=args.device, disable_update=True)
-    M['models'] = scan_hf_models(args.load_from)
+    
+    M['models'] = scan_hf_models(args.load_from)# 扫描指定目录下所有HF格式transformers模型
     if not M['models']:
         raise RuntimeError(f"未在 {os.path.abspath(args.load_from)} 找到 transformers 模型")
-    model_name = next(iter(M['models']))
+    
+    model_name = next(iter(M['models']))# 获取扫描结果字典的第一个模型名称（优先加载排序最靠前的模型
     load_main_model(M['models'][model_name], model_name)
     try:
-        from transformers import MimiModel
+        from transformers import MimiModel# 尝试导入并加载Mimi音频编解码模型
         M['mimi'] = MimiModel.from_pretrained('../model/mimi').eval().to(args.device)
         if args.device != 'cpu': M['mimi'] = M['mimi'].half()
         print('Mimi model loaded')
     except: M['mimi'] = None
     try:
+        # 导入声纹提取模型CAM++，用于提取说话人音色embedding
         from modelscope.models.audio.sv.DTDNN import CAMPPlus
+        # 实例化CAM++声纹网络，配置特征维度、输出嵌入维度等超参
         M['campplus'] = CAMPPlus(feat_dim=80, embedding_size=192, growth_rate=32, bn_size=4,
                                  init_channels=128, config_str='batchnorm-relu', memory_efficient=True)
+        # 加载预训练声纹权重，先加载到CPU避免显存溢出
         sd = torch.load('../model/campplus/campplus_cn_common.pt', map_location='cpu')
+        # 权重转为float精度，加载进网络模型
         M['campplus'].load_state_dict({k: v.float() for k, v in sd.items()})
         M['campplus'] = M['campplus'].eval().to(args.device)
+        # 构建梅尔频谱转换器：音频波形转mel谱，CAM++声纹模型的输入特征
         M['mel_fn'] = torchaudio.transforms.MelSpectrogram(
             sample_rate=16000, n_fft=512, win_length=400, hop_length=160,
             n_mels=80, f_min=20, f_max=7600, norm='slaney', mel_scale='slaney',
         ).to(args.device)
         print('CAM++ loaded')
     except Exception as e:
+        # 声纹模型或mel转换器加载异常，置为None，上层判断是否支持音色克隆
         M['campplus'], M['mel_fn'] = None, None
         print(f'CAM++ load failed: {e}')
+    # 拼接Silero‑VAD语音活动检测onnx模型完整路径
     M['vad_path'] = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'model', 'vad', 'silero_vad.onnx')
+    # 音色库文件夹路径
     spk_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'model', 'speaker')
+    # 遍历三类音色文件：内置音色、未见过音色、用户手动克隆音色
     for fn, group in [('voices.pt', 'builtin'), ('voices_unseen.pt', 'unseen'), (CLONE_FILE, 'manual')]:
         fp = os.path.join(spk_dir, fn)
         if os.path.exists(fp):
             for speaker, v in torch.load(fp, map_location=args.device).items():
+                # 未注册过该音色，或者是用户手动克隆音色，则执行注册
                 if speaker not in V or fn == CLONE_FILE:
                     register_voice(speaker, v, group=group)
     if V: print(f'Loaded {len(V)} voices: builtin={sorted(V_builtin)}, unseen={sorted(V_unseen)}, manual={sorted(V_manual)}')
     log_model_params(M['model'])
     print('Warmup...')
+    
     with torch.no_grad():
-        ids = torch.tensor([[1, 2, 3]], device=args.device)
-        au = torch.full((1, 8, 3), 2049, dtype=torch.long, device=args.device)
+        # 模型预热：跑一遍虚拟输入，完成CUDA内核初始化、显存分配，消除第一次推理延迟
+        ids = torch.tensor([[1, 2, 3]], device=args.device)# 构造模拟文本token输入
+        
+        au = torch.full((1, 8, 3), 2049, dtype=torch.long, device=args.device)# 构造模拟音频code输入
         M['model'].forward(torch.cat((au, ids.unsqueeze(1)), dim=1))
-        if M['model'].audio_encoder: M['model'].audio_encoder(torch.zeros(1, 100, 560, device=args.device), torch.tensor([100], device=args.device))
-        if M['mimi']: M['mimi'].decode(torch.zeros(1, 8, 1, dtype=torch.long, device=args.device))
+        # 预热音频编码器，传入模拟mel特征与有效长度
+        if M['model'].audio_encoder: 
+            M['model'].audio_encoder(torch.zeros(1, 100, 560, device=args.device), torch.tensor([100], device=args.device))
+        if M['mimi']: # 如果Mimi音频解码器可用，预热decode解码流程
+            M['mimi'].decode(torch.zeros(1, 8, 1, dtype=torch.long, device=args.device))
     print('Warmup done!')
 
 

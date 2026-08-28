@@ -28,6 +28,11 @@ def get_lr(current_step, total_steps, lr):
 
 
 def init_distributed_mode():
+    """
+    初始化DDP分布式训练环境。
+    读取环境变量RANK判断是否为分布式模式；非DDP直接返回0；DDP模式初始化进程组并设置当前GPU设备。
+    :return: local_rank，非分布式返回0；DDP返回本机进程对应的GPU编号。0
+    """
     if int(os.environ.get("RANK", -1)) == -1:
         return 0  # 非DDP模式
     
