@@ -636,26 +636,16 @@ https://github.com/user-attachments/assets/3e8d0a76-282d-4a9d-9726-a954cf80198a
 
 ## 🫶支持者
 
-<a href="https://github.com/jingyaogong/minimind-o/stargazers">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://bytecrank.com/nastyox/reporoster/php/stargazersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
-      <source media="(prefers-color-scheme: light)" srcset="https://bytecrank.com/nastyox/reporoster/php/stargazersSVG.php?user=jingyaogong&repo=minimind-o"/>
-      <img alt="github contribution grid snake animation" src="https://bytecrank.com/nastyox/reporoster/php/stargazersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
-    </picture>
-</a>
-
-<a href="https://github.com/jingyaogong/minimind-o/network/members">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
-      <source media="(prefers-color-scheme: light)" srcset="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o"/>
-      <img alt="github contribution grid snake animation" src="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
-    </picture>
-</a>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
+  <source media="(prefers-color-scheme: light)" srcset="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o"/>
+  <img alt="github contribution grid snake animation" src="https://bytecrank.com/nastyox/reporoster/php/forkersSVG.php?user=jingyaogong&repo=minimind-o&theme=dark"/>
+</picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jingyaogong/minimind-o&type=Date&theme=dark"/>
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jingyaogong/minimind-o&type=Date"/>
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jingyaogong/minimind-o&type=Date&theme=dark"/>
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=jingyaogong/minimind-o&type=date&theme=dark&legend=top-left&sealed_token=lCladc7VoiGUamKN6pF8i2v-Zun9RbOwovKtxVjXmTwl_vOLVZjIfaWOsfquEjzIMvsbFp0GEqdzADlzp39Pq_EiHdcuTF8VyBrNI9xh1t_AbMqp-0VZ8bK9i7xVC9doLBjw3pIUZ6m6MX2BWqD6-XYecSdkPErMP_l1I38B2kVV4W59hcDmzFNkIJKI"/>
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=jingyaogong/minimind-o&type=date&legend=top-left&sealed_token=lCladc7VoiGUamKN6pF8i2v-Zun9RbOwovKtxVjXmTwl_vOLVZjIfaWOsfquEjzIMvsbFp0GEqdzADlzp39Pq_EiHdcuTF8VyBrNI9xh1t_AbMqp-0VZ8bK9i7xVC9doLBjw3pIUZ6m6MX2BWqD6-XYecSdkPErMP_l1I38B2kVV4W59hcDmzFNkIJKI"/>
+  <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=jingyaogong/minimind-o&type=date&legend=top-left&sealed_token=lCladc7VoiGUamKN6pF8i2v-Zun9RbOwovKtxVjXmTwl_vOLVZjIfaWOsfquEjzIMvsbFp0GEqdzADlzp39Pq_EiHdcuTF8VyBrNI9xh1t_AbMqp-0VZ8bK9i7xVC9doLBjw3pIUZ6m6MX2BWqD6-XYecSdkPErMP_l1I38B2kVV4W59hcDmzFNkIJKI"/>
 </picture>
 
 # 🎓 引用
