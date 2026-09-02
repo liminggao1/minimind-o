@@ -162,3 +162,53 @@ uv pip freeze --python $conda_python | Out-File requirements-local.txt -Encoding
 
 modelscope download --dataset gongjy/minimind-o_dataset sft_a2a_mini.parquet --local_dir ./dataset
 modelscope download --dataset gongjy/minimind-o_dataset sft_t2a_mini.parquet --local_dir ./dataset
+
+## wsl 的环境安装
+在 WSL Ubuntu 中执行：
+
+以后进入项目时使用：
+conda activate minimind-o
+cd /mnt/d/01dpan/01project/life/minimind-o
+
+wget -O /tmp/miniconda.sh \
+  https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+bash /tmp/miniconda.sh
+
+安装完成后，/tmp/miniconda.sh 可以删除，不影响 Conda：
+rm /tmp/miniconda.sh
+
+安装过程中：
+1. 按回车查看协议
+2. 输入 yes
+3. 安装路径直接使用默认值
+4. 最后选择 yes 初始化 Conda
+5. 然后重新打开 WSL，或执行：
+source ~/.bashrc
+
+创建项目环境：
+conda create -n minimind-o python=3.10 -y
+conda activate minimind-o
+
+conda install -c conda-forge ffmpeg libsndfile git -y
+
+安装 PyTorch 和项目依赖：
+python -m pip install --upgrade pip setuptools wheel
+
+python -m pip install \
+  torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
+  --index-url https://download.pytorch.org/whl/cu128
+
+python -m pip install \
+  -r requirements.txt \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+验证 GPU：
+python - <<'PY'
+import torch
+import torchaudio
+
+print(torch.__version__)
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+PY

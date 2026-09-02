@@ -388,10 +388,10 @@ class MiniMindOmni(MiniMindForCausalLM):
         # 收集thinker主干、talker语音分支所有MoE层的专家负载均衡辅助损失，累加得到aux_loss
         aux_loss = sum(l.mlp.aux_loss for l in list(self.thinker.layers) + list(self.talker.layers) if isinstance(l.mlp, MOEFeedForward))
         # dummy‑gradient占位代码
-        aux_loss += sum(p.sum() for p in self.audio_proj.parameters()) * 0 
-        + sum(p.sum() for p in self.vision_proj.parameters()) * 0 
-        + sum(p.sum() for p in self.talker.lm_head.adapters.parameters()) * 0 
-        + sum(p.sum() for p in self.talker.spk_proj.parameters()) * 0 
+        aux_loss += sum(p.sum() for p in self.audio_proj.parameters()) * 0
+        aux_loss += sum(p.sum() for p in self.vision_proj.parameters()) * 0
+        aux_loss += sum(p.sum() for p in self.talker.lm_head.adapters.parameters()) * 0
+        aux_loss += sum(p.sum() for p in self.talker.spk_proj.parameters()) * 0
         #h_thinker=（3，30，768）第二次（1，1，768）,text_logits=（3，30，6400），第二次（1，1，6400）表示3个batch，每个batch30个token，每个token预测6400个文本token的概率分布
         text_logits = self.thinker.lm_head(h_thinker[:, slice_indices, :])
         audio_logits = self.talker.lm_head(h_talker[:, slice_indices, :])

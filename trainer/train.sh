@@ -56,6 +56,11 @@
 
 
 # 阶段1：t2a 文本转音频，从llm底座开始训练，输出 sft_zero
+
+conda activate minimind-o
+cd /mnt/d/01dpan/01project/life/minimind-o
+
+cd trainer
 CUDA_VISIBLE_DEVICES=0 torchrun \
 --master_port 29560 \
 --nproc_per_node 1 \
@@ -63,7 +68,7 @@ train_sft_omni.py \
 --learning_rate 5e-4 \
 --data_path ../dataset/sft_t2a_mini.parquet \
 --epochs 1 \
---batch_size 40 \
+--batch_size 24 \
 --use_compile 1 \
 --from_weight llm \
 --save_weight sft_zero \
@@ -71,6 +76,19 @@ train_sft_omni.py \
 --use_wandb \
 --use_moe 0
 # epochs * 60min
+
+cd trainer
+$env:CUDA_VISIBLE_DEVICES="0"; python train_sft_omni.py `
+--learning_rate 5e-4 `
+--data_path ../dataset/sft_t2a_mini.parquet `
+--epochs 1 `
+--batch_size 40 `
+--use_compile 1 `
+--from_weight llm `
+--save_weight sft_zero `
+--max_seq_len 512 `
+--use_wandb `
+--use_moe 0
 
 # 阶段2：a2a 音频输入输出，训练audio_proj音频投影层，接续 sft_zero，输出覆盖 sft_zero
 CUDA_VISIBLE_DEVICES=0 torchrun \
